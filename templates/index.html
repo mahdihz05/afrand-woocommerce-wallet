@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>افرند | ثبت فروش حضوری</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/" aria-label="صفحه اصلی پنل">
+    <span class="brand-mark">ا</span><span>افرند<small>دفتر فروش حضوری</small></span>
+  </a>
+  <div class="top-actions"><span class="env-chip">نسخه نمایشی</span><span id="connection-state" class="connection">در حال بررسی اتصال…</span><button id="refresh-connection" type="button" class="link-button" aria-label="بررسی دوبارهٔ اتصال">↻</button>{% if config.PANEL_AUTH_ENABLED %}<form class="logout-form" method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ session.auth_csrf }}"><button class="link-button" type="submit">خروج</button></form>{% endif %}</div>
+</header>
+<main class="container">
+  <div class="page-heading">
+    <div><span class="eyebrow">از پیشخوان فروش تا فروشگاه</span><h1>خرید حضوری را ثبت کنید.</h1><p>یک خرید را وارد کنید یا فاکتورهای حسابداری را از اکسل بیاورید.</p></div><span class="heading-stamp">فروش حضوری<br><b>AFRAND</b></span>
+  </div>
+  <div id="setup-notice" class="notice notice-info" hidden role="status"></div>
+  <div id="global-message" class="message" aria-live="polite" hidden></div>
+
+  <div class="tabs" role="tablist" aria-label="روش ثبت خرید">
+    <button class="tab active" id="tab-manual" role="tab" aria-selected="true" aria-controls="view-manual" data-view="manual"><span class="tab-icon" aria-hidden="true">＋</span><span>ثبت یک خرید<small>انتخاب مشتری و کالا</small></span></button>
+    <button class="tab" id="tab-import" role="tab" aria-selected="false" aria-controls="view-import" data-view="import"><span class="tab-icon" aria-hidden="true">▦</span><span>ورود فایل حسابداری<small>ثبت چند فاکتور از اکسل</small></span></button>
+  </div>
+
+  <section id="view-manual" class="view active" role="tabpanel" aria-labelledby="tab-manual">
+    <div id="pending-order" class="notice notice-info" hidden role="status"><p>نتیجهٔ سفارش قبلی هنوز تأیید نشده است. با همان شناسه بررسی کن تا سفارش دوباره ساخته نشود.</p><button id="retry-order" type="button" class="btn btn-secondary">بررسی نتیجهٔ سفارش قبلی</button></div>
+    <div class="steps" aria-label="مراحل ثبت خرید">
+      <button class="step current" id="step-customer" data-stage="customer" type="button"><i>۱</i>مشتری</button><span class="step-line"></span>
+      <button class="step" id="step-products" data-stage="products" type="button" disabled><i>۲</i>کالاها</button><span class="step-line"></span>
+      <button class="step" id="step-review" data-stage="review" type="button" disabled><i>۳</i>تأیید خرید</button>
+    </div>
+    <div class="workflow-grid">
+      <div class="work-column">
+        <section class="card" id="customer-card">
+          <div class="card-title"><span class="number">۱</span><div><h2>این خرید برای چه کسی است؟</h2><p>موبایل، نام یا ایمیل مشتری را جست‌وجو کنید.</p></div></div>
+          <form id="customer-search-form" class="search-row">
+            <label class="sr-only" for="customer-query">جست‌وجوی مشتری</label>
+            <input id="customer-query" class="control" autocomplete="off" placeholder="مثلاً ۰۹۱۲۱۲۳۴۵۶۷" minlength="2" required>
+            <button class="btn btn-primary" type="submit">جست‌وجو</button>
+          </form>
+          <div class="search-hint"><span>مشتری تازه دارید؟</span><button id="show-new-customer" class="link-button" type="button">افزودن مشتری جدید</button></div>
+          <div id="customer-results" class="results" aria-live="polite"></div>
+          <button id="load-more-customers" class="btn btn-secondary" type="button" hidden>نمایش نتایج بیشتر</button>
+          <div id="new-customer-panel" class="new-customer" hidden>
+            <div class="inline-heading"><div><h3>اطلاعات مشتری جدید</h3><p>مشتری همراه خرید در فروشگاه ثبت می‌شود.</p></div></div>
+            <form id="new-customer-form" class="form-grid">
+              <label>نام<input name="first_name" class="control" autocomplete="given-name" required></label>
+              <label>نام خانوادگی<input name="last_name" class="control" autocomplete="family-name"></label>
+              <label>شمارهٔ موبایل<input name="phone" class="control" inputmode="tel" autocomplete="tel" dir="ltr" required></label>
+              <label>ایمیل<input name="email" type="email" class="control" autocomplete="email" dir="ltr" required></label>
+              <div class="form-action customer-form-actions">
+                <button type="submit" class="btn btn-primary">ادامه و انتخاب کالا</button>
+                <button id="save-customer-button" type="button" class="link-button" disabled>ثبت جداگانهٔ مشتری</button>
+              </div>
+            </form>
+            <p class="helper">ایمیل برای ساخت حساب مشتری جدید لازم است.</p>
+          </div>
+          <div id="selected-customer" class="selected-card" hidden></div>
+          <section id="customer-details" class="customer-detail" hidden>
+            <div class="inline-heading"><div><h3 id="customer-detail-name">جزئیات مشتری</h3><p id="customer-detail-contact"></p></div></div>
+            <h4>سفارش‌های قبلی</h4>
+            <div id="customer-orders" class="customer-orders" aria-live="polite"></div>
+            <details class="edit-details"><summary>ویرایش اطلاعات مشتری</summary><form id="customer-edit-form" class="form-grid">
+              <label>نام<input name="first_name" class="control" autocomplete="given-name" required></label>
+              <label>نام خانوادگی<input name="last_name" class="control" autocomplete="family-name"></label>
+              <label>شمارهٔ موبایل<input name="phone" class="control" inputmode="tel" autocomplete="tel" dir="ltr" required></label>
+              <label>ایمیل<input name="email" type="email" class="control" autocomplete="email" dir="ltr" required></label>
+              <div class="form-action"><button id="update-customer-button" type="submit" class="btn btn-secondary" disabled>ذخیرهٔ تغییرات مشتری</button></div>
+            </form></details>
+          </section>
+        </section>
+
+        <section class="card" id="products-card" hidden>
+          <div class="card-title"><span class="number">۲</span><div><h2>چه کالاهایی خریده است؟</h2><p>کالا را اضافه کنید؛ تعداد را در فهرست خرید تغییر دهید.</p></div></div>
+          <label class="sr-only" for="product-query">جست‌وجوی محصول</label>
+          <div class="search-row"><input id="product-query" class="control" placeholder="نام کالا یا کد کالا"><button id="product-search" class="btn btn-secondary" type="button">جست‌وجو</button></div>
+          <div id="product-results" class="product-results" aria-live="polite"></div>
+          <h3 class="cart-heading">کالاهای این خرید</h3><div id="cart-lines" class="cart-lines"></div>
+          <div class="empty-cart" id="empty-cart">از فهرست بالا، یک کالا به خرید اضافه کنید.</div>
+          <div class="end-actions"><button class="btn btn-secondary" id="back-customer" type="button">بازگشت به مشتری</button><button id="review-purchase" class="btn btn-primary" type="button" disabled>ادامه و تأیید خرید</button></div>
+        </section>
+
+        <section class="card" id="review-card" hidden>
+          <div class="card-title"><span class="number">۳</span><div><h2>خرید آماده ثبت است.</h2><p>مشتری، کالاها و تعداد را یک بار بررسی کنید.</p></div></div>
+          <label class="field-label" for="order-status">وضعیت خرید پس از ثبت</label>
+          <select id="order-status" class="control" required>
+            <option value="on-hold">در انتظار بررسی</option><option value="pending">در انتظار پرداخت</option>
+          </select>
+          <p class="helper">خرید با برچسب «حضوری» و بدون ثبت پرداخت در فروشگاه ذخیره می‌شود.</p>
+          <div class="review-summary" id="review-summary"></div>
+          <div class="end-actions"><button id="back-products" class="btn btn-secondary" type="button">ویرایش کالاها</button><button id="submit-order" class="btn btn-primary" type="button" disabled>تأیید و ثبت خرید</button></div>
+        </section>
+        <div id="order-result" class="result-box" hidden role="status" aria-live="polite"></div>
+      </div>
+
+      <aside class="side-card receipt"><span class="eyebrow">خرید جاری</span><h2>خلاصه خرید</h2><div id="purchase-receipt"><p class="receipt-empty">با انتخاب مشتری، خرید را شروع کنید.</p></div><div class="receipt-foot">پس از ثبت، خرید در سابقه مشتری هم نمایش داده می‌شود.</div></aside>
+    </div>
+  </section>
+
+  <section id="view-import" class="view" role="tabpanel" aria-labelledby="tab-import" hidden>
+    <section class="card import-card">
+      <div class="card-title"><div><h2>فاکتورهای حسابداری را بیاورید.</h2><p>فایل را انتخاب کنید؛ پیش از ثبت، فاکتورها و خطاها را خواهید دید.</p></div></div>
+      <div class="import-intro"><div class="sample-block"><span class="eyebrow">برای اولین بار</span><h3>با یک فایل نمونه شروع کنید</h3><p>دو فاکتور نمونه و یک ردیف خطادار، با ستون‌های فارسی.</p><a class="btn btn-secondary download-link" href="/template.xlsx">دریافت نمونه حسابداری</a></div>
+      <form id="import-form" class="upload-area"><label for="excel-file" class="upload-label"><span class="upload-icon" aria-hidden="true">↑</span><strong>انتخاب فایل اکسل حسابداری</strong><small>فایل .xlsx · حداکثر ۲ مگابایت و ۵۰۰ ردیف</small></label><input id="excel-file" type="file" accept=".xlsx" required><button type="submit" class="btn btn-primary">نمایش و بررسی فایل</button></form></div>
+      <details class="format-guide"><summary>فایل چه ستون‌هایی داشته باشد؟</summary><p>شماره فاکتور، نام مشتری، موبایل، کد کالا و تعداد لازم‌اند. ترتیب ستون‌ها آزاد است؛ عنوان‌های فارسی و قالب انگلیسی قبلی شناسایی می‌شوند. اگر عنوان متفاوت باشد، ستون‌ها را انتخاب می‌کنید.</p><p>تاریخ، کد مشتری، شرح کالا، واحد، قیمت واحد، تخفیف، مالیات، مبلغ ردیف و واحد پول اختیاری‌اند. ایمیل فقط برای مشتری جدید لازم است. هر ردیف یک قلم کالا است؛ شماره فاکتور مشترک یعنی یک خرید.</p><p>کد کالا باید با کد محصول فروشگاه یکسان باشد. مبلغ‌های حسابداری برای نمایش و نگهداری مرجع استفاده می‌شوند؛ قیمت نهایی از فروشگاه محاسبه می‌شود. فایل را از برگه فعال اکسل می‌خوانیم.</p></details>
+    </section>
+    <section id="column-mapping" class="card" hidden><div class="card-title"><div><h2>ستون‌های فایل را مشخص کنید</h2><p>برای هر مورد، ستون متناظر در فایل خودتان را انتخاب کنید.</p></div></div><label class="field-label" for="header-row">ردیف عنوان ستون‌ها</label><select id="header-row" class="control"></select><form id="mapping-form"><div id="mapping-fields" class="form-grid"></div><div class="end-actions"><button type="submit" class="btn btn-primary">بررسی با این ستون‌ها</button></div></form></section>
+    <section id="import-preview" class="card preview-card" hidden>
+      <div class="card-title"><span class="number">۲</span><div><h2>فایل بررسی شد.</h2><p>فاکتورهای آماده ثبت را تأیید کنید. فاکتور خطادار تا اصلاح فایل ثبت نمی‌شود.</p></div><button id="edit-mapping" class="link-button" type="button">تغییر انتخاب ستون‌ها</button></div>
+      <div id="preview-summary" class="preview-summary"></div>
+      <div class="preview-toolbar"><label><input id="only-errors" type="checkbox"> فقط ردیف‌های نیازمند اصلاح</label><span id="preview-file-name"></span></div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>ردیف</th><th>فاکتور / تاریخ</th><th>مشتری</th><th>کالا / تعداد</th><th>مبلغ حسابداری</th><th>نتیجه</th></tr></thead><tbody id="preview-rows"></tbody></table></div>
+      <p class="helper">مبلغ فایل حسابداری با واحد پول همان فایل نمایش داده می‌شود و قیمت سفارش را تغییر نمی‌دهد.</p>
+      <div class="import-confirm"><label for="import-status">وضعیت خریدها پس از ثبت<select id="import-status" class="control"><option value="on-hold">در انتظار بررسی</option><option value="pending">در انتظار پرداخت</option></select></label><button id="commit-import" class="btn btn-primary" type="button" disabled>ثبت فاکتورهای آماده</button></div>
+    </section>
+    <section id="import-result" class="card result-box" hidden aria-live="polite"></section>
+  </section>
+</main>
+<footer class="footer">افرند · نمونه نمایشی متصل به فروشگاه آزمایشی</footer>
+<div id="request-progress" class="request-progress" role="status" aria-live="polite" hidden><span class="spinner" aria-hidden="true"></span>در حال انجام درخواست…</div>
+<dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-description">
+  <form method="dialog">
+    <span class="confirm-symbol" aria-hidden="true">✓</span>
+    <span class="eyebrow">یک بررسی پیش از ثبت</span>
+    <h2 id="confirm-title"></h2>
+    <p id="confirm-description"></p>
+    <div class="confirm-actions"><button id="confirm-accept" class="btn btn-primary" value="confirm"></button><button id="confirm-cancel" class="btn btn-secondary" value="cancel" autofocus>انصراف</button></div>
+  </form>
+</dialog>
+</body>
+</html>

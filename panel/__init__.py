@@ -1,0 +1,1 @@
+"""Afrand WooCommerce demo package."""

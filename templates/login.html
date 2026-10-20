@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>ورود به پنل افرند</title>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='login.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-box">
+    <a class="brand" href="/login"><span class="brand-mark">ا</span><span>افرند<small>{{ 'مدیریت کیف پول مشتریان' if config.WALLET_MODE else 'دفتر فروش حضوری' }}</small></span></a>
+    <h1>ورود به پنل</h1>
+    <p class="login-intro">برای دیدن دمو، وارد حساب خود شوید.</p>
+    {% if error %}<div class="login-error" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" action="{{ url_for('login') }}">
+      <input type="hidden" name="csrf_token" value="{{ session.auth_csrf }}">
+      <label for="username">نام کاربری</label>
+      <input class="control" id="username" name="username" autocomplete="username" dir="ltr" required autofocus>
+      <label for="password">رمز عبور</label>
+      <input class="control" id="password" name="password" type="password" autocomplete="current-password" dir="ltr" required>
+      <button type="submit" class="btn btn-primary">ورود</button>
+    </form>
+    <p class="login-footnote">نسخهٔ نمایشی متصل به فروشگاه آزمایشی</p>
+  </main>
+</body>
+</html>

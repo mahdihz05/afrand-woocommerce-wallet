@@ -1,0 +1,13 @@
+[project]
+name = "afrand-woocommerce-sales-panel"
+version = "0.1.0"
+description = "Local Flask demo for Afrand in-person WooCommerce order entry and Excel imports"
+requires-python = ">=3.12"
+dependencies = [
+  "Flask>=3.1,<4",
+  "openpyxl>=3.1,<4",
+  "python-dotenv>=1,<2",
+]
+
+[tool.unittest]
+start-directory = "tests"

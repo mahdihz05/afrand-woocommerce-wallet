@@ -1,0 +1,25 @@
+__pycache__/
+.venv/
+.env
+instance/
+*.sqlite3
+*.db
+*.log
+
+# Local configuration, private documents and generated artifacts
+.env.*
+!.env.example
+.hermes/
+outputs/
+tmp/
+NUL
+*.docx
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Machine-specific agent guidance and server administration helpers
+AGENTS.md
+scripts/remote_admin.py
+deploy/enable_https.py
