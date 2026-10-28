@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Afrand Wallet Bridge
  * Description: Phone-based customer registration and idempotent TeraWallet credits for the Afrand panel.
- * Version: 1.0.2
+ * Version: 1.1.0
  * Requires PHP: 7.4
  */
 defined('ABSPATH') || exit;
 
 final class Afrand_Wallet_Bridge {
-    const VERSION = '1.0.2';
+    const VERSION = '1.1.0';
     const NS = 'wc/v3';
     static function table() { global $wpdb; return $wpdb->prefix . 'afrand_wallet_operations'; }
     static function activate() {
@@ -37,6 +37,7 @@ final class Afrand_Wallet_Bridge {
             '/customers/create'=>array('POST','create_customer'),
             '/customers/lookup'=>array('POST','lookup_customers'),
             '/customers/(?P<id>\d+)'=>array('GET','customer'),
+            '/customers/(?P<id>\d+)/company'=>array('PUT','update_company'),
             '/credits'=>array('POST','credit'),
             '/operations/(?P<key>[a-f0-9]{64})'=>array('GET','operation'),
         ) as $path=>$handler) {
@@ -61,7 +62,7 @@ final class Afrand_Wallet_Bridge {
         return $user && preg_match('/^(?:0?9|\+?98|0098)/',$user->user_login) ? self::phone($user->user_login) : '';
     }
     static function public_user($user) {
-        return array('id'=>(int)$user->ID,'first_name'=>(string)get_user_meta($user->ID,'first_name',true),'last_name'=>(string)get_user_meta($user->ID,'last_name',true),'name'=>$user->display_name,'phone'=>self::user_phone($user->ID));
+        return array('id'=>(int)$user->ID,'first_name'=>(string)get_user_meta($user->ID,'first_name',true),'last_name'=>(string)get_user_meta($user->ID,'last_name',true),'name'=>$user->display_name,'phone'=>self::user_phone($user->ID),'company'=>(string)get_user_meta($user->ID,'billing_company',true));
     }
     static function phone_matches($phone) {
         // Exact normalization includes legacy Persian digits and +98 billing phones.
@@ -92,6 +93,7 @@ final class Afrand_Wallet_Bridge {
         return array('matches'=>$result);
     }
     static function status($r) {
+        if (!self::supports_wallet_locks()) return self::error('Database version does not support safe wallet locks.',503,'afrand_database_version');
         return array('connected'=>true,'wallet'=>'TeraWallet','bridge_version'=>self::VERSION,'currency'=>get_woocommerce_currency(),'decimals'=>wc_get_price_decimals());
     }
     static function search($r) {
@@ -118,6 +120,34 @@ final class Afrand_Wallet_Bridge {
         if (!$user) return self::error('مشتری پیدا نشد.',404);
         return array('customer'=>self::public_user($user),'wallet'=>self::wallet_data($user->ID));
     }
+    static function update_company($r) {
+        $id=(int)$r['id'];
+        if (!current_user_can('edit_user',$id)) return self::error('دسترسی ویرایش این مشتری لازم است.',403);
+        if (!get_userdata($id)) return self::error('مشتری پیدا نشد.',404);
+        $value=$r->get_param('company'); $expected=$r->get_param('expected_company');
+        if ($r->get_param('confirm')!==true || !is_string($value) || !is_string($expected) || mb_strlen($value)>120 || mb_strlen($expected)>120) return self::error('شرکت و مقدار قبلی و تأیید لازم است.');
+        $value=trim(sanitize_text_field($value));
+        $lock='company-'.$id;
+        if (!self::lock($lock)) return self::error('ویرایش شرکت در حال انجام است.',409);
+        try {
+            // Never overwrite a concurrent edit, nor silently erase on customer replay/import.
+            clean_user_cache($id);
+            if ((string)get_user_meta($id,'billing_company',true)!==$expected) return self::error('شرکت تغییر کرده است؛ مشتری را دوباره انتخاب کنید.',409,'afrand_conflict');
+            $customer=new WC_Customer($id);
+            $customer->set_billing_company($value); $customer->save();
+            clean_user_cache($id);
+            if ((string)get_user_meta($id,'billing_company',true)!==$value) return self::error('ذخیره شرکت تأیید نشد؛ مقدار را دوباره بخوانید.',503);
+            return array('customer'=>self::public_user(get_userdata($id)));
+        } finally { self::unlock($lock); }
+    }
+    static function supports_wallet_locks() {
+        global $wpdb;
+        $version=(string)$wpdb->get_var('SELECT VERSION()');
+        if (stripos($version,'MariaDB')!==false) {
+            return preg_match('/(\d+\.\d+\.\d+)-MariaDB/i',$version,$match) && version_compare($match[1],'10.0.2','>=');
+        }
+        return preg_match('/^(\d+\.\d+\.\d+)/',$version,$match) && version_compare($match[1],'5.7.5','>=');
+    }
     static function lock($key) {
         global $wpdb;
         return (int)$wpdb->get_var($wpdb->prepare('SELECT GET_LOCK(%s, 5)','afrand_'.substr(hash('sha256',$key),0,48)))===1;
@@ -129,6 +159,8 @@ final class Afrand_Wallet_Bridge {
         if ($r->get_param('confirm')!==true) return self::error('تأیید ثبت مشتری لازم است.');
         $phone=self::phone($r->get_param('phone'));
         $first=sanitize_text_field((string)$r->get_param('first_name')); $last=sanitize_text_field((string)$r->get_param('last_name'));
+        $company=trim(sanitize_text_field((string)$r->get_param('company')));
+        if (mb_strlen($company)>120) return self::error('شرکت حداکثر ۱۲۰ نویسه است.');
         if (!preg_match('/^09\d{9}$/',$phone) || !$first || mb_strlen($first)>80 || mb_strlen($last)>80) return self::error('نام و موبایل معتبر لازم است.');
         $lock='phone-'.$phone;
         if (!self::lock($lock)) return self::error('ثبت مشتری در حال انجام است؛ دوباره بررسی کنید.',409);
@@ -142,6 +174,7 @@ final class Afrand_Wallet_Bridge {
             update_user_meta($id,'billing_phone',$phone); update_user_meta($id,'afrand_profile_phone',$phone);
             update_user_meta($id,'billing_first_name',$first); update_user_meta($id,'billing_last_name',$last);
             update_user_meta($id,'afrand_created_by','wallet-panel');
+            $customer=new WC_Customer($id); $customer->set_billing_company($company); $customer->save();
             return array('customer'=>self::public_user(get_userdata($id)),'replayed'=>false);
         } finally { self::unlock($lock); }
     }
@@ -155,7 +188,7 @@ final class Afrand_Wallet_Bridge {
         $payload=json_decode($row['result_json'],true);
         $table=$wpdb->base_prefix.'woo_wallet_transactions';
         $transactions=$wpdb->get_results($wpdb->prepare("SELECT transaction_id,user_id,amount,currency,type FROM $table WHERE details LIKE %s AND deleted=0",'%'.$wpdb->esc_like('[AFRAND:'.$key.']').'%'),ARRAY_A);
-        if (count($transactions)!==1) return self::error('نتیجهٔ واریز هنوز مشخص نیست. مبلغ دوباره واریز نمی‌شود؛ در تراکنش‌های وردپرس بررسی کنید.',409,'afrand_unknown');
+        if ($wpdb->last_error || !is_array($transactions) || count($transactions)!==1) return self::error('نتیجهٔ واریز هنوز مشخص نیست. مبلغ دوباره واریز نمی‌شود؛ در تراکنش‌های وردپرس بررسی کنید.',409,'afrand_unknown');
         $t=$transactions[0];
         if ((int)$t['user_id']!==$payload['customer_id'] || $t['type']!=='credit' || (float)$t['amount']!==(float)$payload['amount'] || $t['currency']!==$payload['currency']) return self::error('تراکنش نیازمند بررسی است.',409,'afrand_unknown');
         $result=array_merge($payload,array('transaction_id'=>(int)$t['transaction_id'],'replayed'=>true,'state'=>'succeeded'));
@@ -165,11 +198,27 @@ final class Afrand_Wallet_Bridge {
     static function operation($r) {
         $key=$r['key'];
         if (!self::lock('credit-'.$key)) return self::error('واریز در حال بررسی است.',409,'afrand_unknown');
-        try { $row=self::saved($key); return $row ? self::reconcile($key,$row) : self::error('این درخواست هنوز ثبت نشده است.',404,'afrand_not_found'); }
+        try {
+            $row=self::saved($key);
+            if (!$row) return self::error('این درخواست هنوز ثبت نشده است.',404,'afrand_not_found');
+            $result=self::reconcile($key,$row);
+            if (is_wp_error($result)) return $result;
+            // Use the same WordPress sanitizer as credit/fingerprint, including for
+            // operations saved before this verification field was introduced.
+            // Keep the persisted note/fingerprint unchanged; verify, never rewrite.
+            $expected=$r->get_param('expected_note');
+            if ($expected!==null) {
+                if (!is_string($expected) || !isset($result['note']) || sanitize_text_field($expected)!==$result['note']) return self::error('عنوان تراکنش با سند ثبت‌شده یکسان نیست.',409,'afrand_conflict');
+                $result['verified_note']=$expected;
+            }
+            return $result;
+        }
         finally { self::unlock('credit-'.$key); }
     }
     static function credit($r) {
         global $wpdb;
+        // Older servers release the first named lock when taking the second one.
+        if (!self::supports_wallet_locks()) return self::error('Database version does not support safe wallet locks.',503,'afrand_database_version');
         $key=(string)$r->get_param('request_id'); $id=(int)$r->get_param('customer_id');
         $amount=(string)$r->get_param('amount'); $currency=(string)$r->get_param('currency');
         $note=sanitize_text_field((string)$r->get_param('note'));
@@ -185,6 +234,13 @@ final class Afrand_Wallet_Bridge {
                 if ($row['fingerprint']!==$fingerprint) return self::error('شناسهٔ واریز قبلاً با اطلاعات دیگری استفاده شده است.',409,'afrand_conflict');
                 return self::reconcile($key,$row);
             }
+            // Different invoices for one wallet must not race its balance update.
+            // Requires MySQL >=5.7.5 / MariaDB with multiple named locks per connection.
+            $wallet_lock='wallet-'.$id;
+            if (!self::lock($wallet_lock)) return self::error('کیف پول در حال پردازش سند دیگری است؛ دوباره بررسی کنید.',503);
+            try {
+            // A persistent object cache may contain a balance from before acquiring the lock.
+            clean_user_cache($id);
             $now=current_time('mysql',true);
             if (!$wpdb->insert(self::table(),array('operation_key'=>$key,'fingerprint'=>$fingerprint,'state'=>'processing','result_json'=>wp_json_encode($payload),'created_at'=>$now,'updated_at'=>$now))) return self::error('ثبت شناسهٔ واریز انجام نشد.',503);
             $details='واریز از پنل افرند'.($note ? ' — '.$note : '').' [AFRAND:'.$key.']';
@@ -194,6 +250,7 @@ final class Afrand_Wallet_Bridge {
             $result=self::reconcile($key,self::saved($key));
             if (!is_wp_error($result)) $result['replayed']=false;
             return $result;
+            } finally { self::unlock($wallet_lock); }
         } finally { self::unlock('credit-'.$key); }
     }
 }

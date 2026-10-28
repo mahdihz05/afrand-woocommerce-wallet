@@ -580,7 +580,7 @@
         const safe = value => { const text = String(value ?? '').replace(/[\t\r\n]/g, ' '); return /^[=+@-]/.test(text) ? `'${text}` : text; };
         const lines = [['order_ref','order_id','customer_id','result','error'], ...result.results.map(row => [row.order_ref, row.order_id, row.customer_id, row.replayed ? 'duplicate' : row.state, row.error]), ...invalidRows.map(row => [row.order_ref, '', '', `invalid-row-${row.row_number}`, (row.errors || []).join('، ')])];
         const url = URL.createObjectURL(new Blob(['\uFEFF' + lines.map(row => row.map(safe).join('\t')).join('\n')], { type: 'text/tab-separated-values;charset=utf-8' }));
-        const a = document.createElement('a'); a.href = url; a.download = 'afrand-import-results.tsv'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const a = document.createElement('a'); a.href = url; a.download = 'customer-import-results.tsv'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       }); box.append(download);
       state.draftId = null; state.validCount = 0; $('#import-preview').hidden = true; $('#import-form').reset(); refreshSubmitState();
     } catch (error) { message(`${errorText(error)} پیش از تلاش دوباره، نتیجهٔ سفارش‌ها را در ووکامرس بررسی کن.`, 'error'); }

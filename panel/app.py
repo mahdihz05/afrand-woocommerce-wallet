@@ -18,7 +18,7 @@ from .domain import find_customer_by_phone, normalize_phone, positive_integer, v
 from .accounting import FIELDS, read_accounting_export
 from .ledger import Ledger
 from .woo import WooCommerceClient, WooError
-from .auth import configure_login
+from .auth import configure_login, validate_login_configuration
 
 ALLOWED_ORDER_STATUSES = {"pending", "on-hold"}
 
@@ -30,7 +30,7 @@ def _as_bool(value) -> bool:
 def create_app(test_config: dict | None = None, woo_client=None) -> Flask:
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
     app.config.update(
-        SECRET_KEY="local-demo-change-me",
+        SECRET_KEY=None,
         MAX_CONTENT_LENGTH=2 * 1024 * 1024,
         DATABASE=str(Path(app.instance_path) / "panel.sqlite3"),
         WC_BASE_URL="",
@@ -46,6 +46,7 @@ def create_app(test_config: dict | None = None, woo_client=None) -> Flask:
     )
     if test_config:
         app.config.update(test_config)
+    validate_login_configuration(app)
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     ledger = Ledger(app.config["DATABASE"])
     woo = woo_client or WooCommerceClient(app.config)
@@ -356,14 +357,14 @@ def create_app(test_config: dict | None = None, woo_client=None) -> Flask:
         sample = Path(app.root_path).parent / "demo" / "afrand-accounting-sample.xlsx"
         if not sample.exists():
             return api_error("validation", "فایل نمونه حسابداری در دسترس نیست.", 404)
-        return send_file(sample, as_attachment=True, download_name="afrand-accounting-sample.xlsx")
+        return send_file(sample, as_attachment=True, download_name="customer-accounting-sample.xlsx")
 
     @app.get("/demo.xlsx")
     def demo_spreadsheet():
         sample = Path(app.root_path).parent / "demo" / "afrand-demo.xlsx"
         if not sample.exists():
             return api_error("validation", "فایل دموی آماده هنوز ساخته نشده است.", 404)
-        return send_file(sample, as_attachment=True, download_name="afrand-demo.xlsx")
+        return send_file(sample, as_attachment=True, download_name="customer-demo.xlsx")
 
     @app.post("/api/import/preview")
     def import_preview():

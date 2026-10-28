@@ -13,11 +13,31 @@ class SchemeCookieSession(SecureCookieSessionInterface):
         return request.is_secure
 
 
+def validate_login_configuration(app):
+    if not app.config.get('PANEL_AUTH_ENABLED'):
+        return
+    # Rotation keys can also authenticate cookies; validate every signer.
+    keys = [app.config.get('SECRET_KEY')]
+    fallbacks = app.config.get('SECRET_KEY_FALLBACKS') or []
+    if not isinstance(fallbacks, (list, tuple)):
+        raise ValueError('SECRET_KEY_FALLBACKS must be a list of strong session keys')
+    keys.extend(fallbacks)
+    for key in keys:
+        if isinstance(key, str):
+            key = key.encode('utf-8')
+        if (not isinstance(key, bytes) or len(key) < 32
+                or key.strip() == b'local-demo-change-me'
+                or len(set(key)) < 8):
+            raise ValueError('SECRET_KEY and any SECRET_KEY_FALLBACKS must be independently '
+                             'generated random keys of at least 32 bytes; public defaults '
+                             'and repetitive keys are not allowed when panel login is enabled')
+    if not app.config.get('PANEL_PASSWORD_HASH'):
+        raise ValueError('PANEL_PASSWORD_HASH is required when panel login is enabled')
+
+
 def configure_login(app):
     if not app.config.get('PANEL_AUTH_ENABLED'):
         return
-    if not app.config.get('PANEL_PASSWORD_HASH'):
-        raise ValueError('PANEL_PASSWORD_HASH is required when panel login is enabled')
     app.session_interface = SchemeCookieSession()
     app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
                       PERMANENT_SESSION_LIFETIME=timedelta(hours=8))

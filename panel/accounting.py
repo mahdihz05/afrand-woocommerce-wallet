@@ -50,7 +50,7 @@ def cell_value(value):
     return value
 
 
-def read_accounting_export(stream, mapping=None, header_row=None, fields=None):
+def read_accounting_export(stream, mapping=None, header_row=None, fields=None, max_rows=500):
     field_definitions = fields or FIELDS
     workbook = load_workbook(stream, read_only=True, data_only=True)
     try:
@@ -94,8 +94,9 @@ def read_accounting_export(stream, mapping=None, header_row=None, fields=None):
             row = {key: cell_value(cells[col] if col < len(cells) else None) for key, col in detected.items()}
             row["row_number"] = number
             rows.append(row)
-            if len(rows) > 500:
-                raise ValueError("حداکثر ۵۰۰ ردیف در هر فایل دمو مجاز است.")
+            if len(rows) > max_rows:
+                limit = str(max_rows).translate(str.maketrans('0123456789', '۰۱۲۳۴۵۶۷۸۹'))
+                raise ValueError(f"حداکثر {limit} ردیف در هر فایل مجاز است.")
 
         for i, cells in enumerate(leading[index + 1:], start=index + 2):
             append_row(i, cells)

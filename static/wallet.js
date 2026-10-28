@@ -3,6 +3,7 @@
   const $ = selector => document.querySelector(selector);
   const $$ = selector => [...document.querySelectorAll(selector)];
   const state = { connected:false, writes:false, currency:'IRT', customer:null, balance:null, page:1, query:'', hasMore:false, draft:null, preview:null, mapping:null, previewBusy:false, importBusy:false, customerBusy:false, creditBusy:false };
+  let companyBusy = false;
   let pending = null, searchVersion = 0, detailVersion = 0, searchController = null;
   let active = 0;
   const busy = new Map();
@@ -41,6 +42,7 @@
     return new Promise(resolve=>{ dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'),{once:true}); dialog.showModal(); });
   }
   function refresh() {
+    $('#save-company').disabled=!state.writes||!state.customer||companyBusy||state.importBusy||Boolean(pending);
     $('#save-customer-button').disabled=!state.writes||state.customerBusy||Boolean(pending);
     $('#submit-credit').disabled=!state.writes||!state.customer||state.creditBusy||Boolean(pending);
     $('#commit-import').disabled=!state.writes||!state.draft||state.previewBusy||state.importBusy||Boolean(pending);
@@ -67,7 +69,7 @@
   function renderCustomers(customers,append=false) {
     const box=$('#customer-results'); if(!append) box.replaceChildren();
     if(!customers.length && !append) { box.textContent='مشتری پیدا نشد؛ می‌توانید مشتری جدید بسازید.'; return; }
-    customers.forEach(customer=>{ const row=document.createElement('div'); row.className='result-option'; const info=document.createElement('div'); const title=document.createElement('b'); title.textContent=name(customer); const phone=document.createElement('small'); phone.textContent=customer.phone||`شناسهٔ وردپرس: ${customer.id}`; info.append(title,phone); const button=document.createElement('button'); button.type='button'; button.className='btn btn-secondary'; button.textContent='انتخاب'; button.addEventListener('click',()=>selectCustomer(customer)); row.append(info,button); box.append(row); });
+    customers.forEach(customer=>{ const row=document.createElement('div'); row.className='result-option'; const info=document.createElement('div'); const title=document.createElement('b'); title.textContent=name(customer); const phone=document.createElement('small'); phone.textContent=`${customer.phone||`شناسهٔ وردپرس: ${customer.id}`} · شرکت: ${customer.company||'ثبت نشده'}`; info.append(title,phone); const button=document.createElement('button'); button.type='button'; button.className='btn btn-secondary'; button.textContent='انتخاب'; button.addEventListener('click',()=>selectCustomer(customer)); row.append(info,button); box.append(row); });
   }
   $('#customer-search-form').addEventListener('submit',async event=>{
     event.preventDefault(); searchController?.abort(); searchController=new AbortController(); const controller=searchController; const version=++searchVersion;
@@ -83,14 +85,23 @@
   });
   async function selectCustomer(customer) {
     if(pending||state.importBusy) return;
-    state.customer=customer; state.balance=null; const version=++detailVersion;
+    state.customer=customer; state.balance=null; $('#company-form').hidden=true; const version=++detailVersion;
     $('#credit-customer').textContent=`واریز برای ${name(customer)} · ${customer.phone||`شناسهٔ ${customer.id}`}`;
     $('#new-customer-panel').hidden=true; $('#credit-card').hidden=false; $('#credit-result').hidden=true;
     const box=$('#selected-customer'); box.replaceChildren(); const title=document.createElement('h2'); title.textContent=name(customer); const phone=document.createElement('p'); phone.className='customer-contact'; phone.textContent=customer.phone||`شناسهٔ ${customer.id}`; box.append(title,phone);
     $('#wallet-balance').textContent='در حال دریافت…'; $('#balance-caption').textContent='موجودی از وردپرس خوانده می‌شود.'; $('#wallet-history').hidden=true; refresh();
-    try { const data=await api(`/api/customers/${customer.id}`,{},[$('#wallet-balance')]); if(version!==detailVersion) return; state.customer=data.customer; state.balance=data.wallet.balance; $('#wallet-balance').textContent=money(data.wallet.balance,data.wallet.currency); if(data.wallet.history_error) $('#wallet-transactions').textContent='خواندن سابقه انجام نشد؛ مشتری را دوباره انتخاب کنید.'; else renderTransactions(data.wallet.transactions); $('#wallet-history').hidden=false; }
+    try { const data=await api(`/api/customers/${customer.id}`,{},[$('#wallet-balance')]); if(version!==detailVersion) return; state.customer=data.customer; $('#company-form').hidden=false; $('#customer-company').value=data.customer.company||''; state.balance=data.wallet.balance; $('#wallet-balance').textContent=money(data.wallet.balance,data.wallet.currency); if(data.wallet.history_error) $('#wallet-transactions').textContent='خواندن سابقه انجام نشد؛ مشتری را دوباره انتخاب کنید.'; else renderTransactions(data.wallet.transactions); $('#wallet-history').hidden=false; }
     catch(error) { if(version===detailVersion) { $('#wallet-balance').textContent='—'; $('#balance-caption').textContent='موجودی دریافت نشد؛ مشتری را دوباره انتخاب کنید.'; message(error.message,'error'); } }
   }
+  $('#company-form').addEventListener('submit',async event=>{
+    event.preventDefault(); if(!state.writes||!state.customer||companyBusy||state.importBusy||pending) return;
+    const customer=state.customer, company=$('#customer-company').value.trim();
+    if(!await confirmAction('ویرایش شرکت',`شرکت «${name(customer)}» از «${customer.company||'خالی'}» به «${company||'خالی'}» تغییر کند؟`,'ثبت تغییر شرکت')) return;
+    companyBusy=true; refresh();
+    try { const data=await api(`/api/customers/${customer.id}/company`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({company,expected_company:customer.company||'',confirm:true})},[$('#save-company')]); if(state.customer?.id===customer.id) { state.customer=data.customer; $('#customer-company').value=data.customer.company||''; } message('شرکت در اطلاعات صورتحساب مشتری ذخیره شد.','success'); }
+    catch(error) { message(error.message,'error'); }
+    finally { companyBusy=false; refresh(); }
+  });
   function renderTransactions(rows) {
     const box=$('#wallet-transactions'); box.replaceChildren(); if(!rows.length) { box.textContent='هنوز تراکنشی ثبت نشده است.'; return; }
     rows.forEach(row=>{ const item=document.createElement('div'); item.className='wallet-transaction'; const amount=document.createElement('b'); amount.className=row.type; amount.textContent=`${row.type==='credit'?'＋ واریز':'− برداشت'} ${money(row.amount,row.currency)}`; const info=document.createElement('small'); info.textContent=`تراکنش ${row.transaction_id} · ${row.date}`; const note=document.createElement('small'); note.textContent=(row.details||'').replace(/\s*\[AFRAND:[a-f0-9]{64}\]/g,''); item.append(amount,info,note); box.append(item); });
@@ -135,7 +146,7 @@
     const customer=state.customer;
     const requestId=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');
     const payload={request_id:requestId,customer_id:customer.id,purchase_amount:values.purchase,cashback_percent:values.percent,currency:state.currency,note:$('#credit-note').value.trim(),confirm:true};
-    if(!await confirmAction('تأیید مبلغ خرید کاربر',`مبلغ خرید: ${money(values.purchase)}؛ کش‌بک: ${values.percent}٪؛ فقط ${money(values.amount)} به کیف پول «${name(customer)}» با موبایل ${customer.phone||'ثبت‌نشده'} واریز می‌شود.`, 'تأیید و ثبت مبلغ خرید')) return;
+    if(!await confirmAction('تأیید مبلغ خرید کاربر',`مبلغ خرید: ${money(values.purchase)}؛ کش‌بک: ${values.percent}٪؛ فقط ${money(values.amount)} به کیف پول «${name(customer)}» با موبایل ${customer.phone||'ثبت‌نشده'} واریز می‌شود.${payload.note?` عنوان تراکنش: ${payload.note}`:''}`, 'تأیید و ثبت مبلغ خرید')) return;
     pending={payload,customer};
     if (!savePending()) { pending=null; refresh(); return message('ذخیرهٔ شناسهٔ واریز در مرورگر ممکن نیست. دسترسی ذخیره‌سازی مرورگر را فعال کنید و دوباره تلاش کنید؛ مبلغ واریز نشد.','error'); }
     await sendCredit(false);
@@ -165,7 +176,7 @@
     let percent; try { percent=parsePercent($('#import-cashback-percent').value); } catch(error) { return message(error.message,'error'); }
     state.previewBusy=true; state.draft=null; state.preview=null; $('#import-preview').hidden=true; $('#excel-file').disabled=true; refresh();
     const form=new FormData(); form.append('file',file); form.append('cashback_percent',percent); if(mapping) { form.append('mapping',JSON.stringify(mapping)); form.append('header_row',String(header)); }
-    try { const data=await api('/api/import/preview',{method:'POST',body:form},[$('#preview-file'),$('#mapping-form button')]); state.mapping=data; $('#import-result').hidden=true; if(data.mapping_required) { renderMapping(data); return; } state.preview=data; state.draft=data.valid_count?data.draft_id:null; $('#column-mapping').hidden=true; $('#only-errors').checked=false; renderPreview(); $('#preview-file-name').textContent=file.name; $('#import-preview').hidden=false; }
+    try { const data=await api('/api/import/preview',{method:'POST',body:form},[$('#preview-file'),$('#mapping-form button')]); state.mapping=data; $('#edit-mapping').hidden=false; savedImports(); $('#import-result').hidden=true; if(data.mapping_required) { renderMapping(data); return; } state.preview=data; state.draft=data.valid_count?data.draft_id:null; $('#column-mapping').hidden=true; $('#only-errors').checked=false; renderPreview(); $('#preview-file-name').textContent=file.name; $('#import-preview').hidden=false; }
     catch(error) { message(error.message,'error'); }
     finally { state.previewBusy=false; $('#excel-file').disabled=false; refresh(); }
   }
@@ -177,23 +188,30 @@
   $('#mapping-form').addEventListener('submit',event=>{ event.preventDefault(); const mapping={}; for(const [key,value] of new FormData(event.currentTarget)) if(value!=='') mapping[key]=Number(value); if(new Set(Object.values(mapping)).size!==Object.values(mapping).length) return message('هر ستون را فقط به یک مورد اختصاص دهید.','error'); previewFile(mapping,Number($('#header-row').value)); });
   $('#edit-mapping').addEventListener('click',()=>{ state.draft=null; $('#import-preview').hidden=true; renderMapping(state.mapping); refresh(); });
   $('#only-errors').addEventListener('change',renderPreview);
+  async function savedImports() {
+    try { const data=await api('/api/imports'); const box=$('#saved-imports'); box.replaceChildren();
+      data.imports.forEach(item=>{ const button=document.createElement('button'); button.className='btn btn-secondary'; button.type='button'; button.textContent=`${item.created_at} · ${item.draft_id.slice(0,8)} · ${item.confirmed?'اجرا تأیید شده':'پیش‌نمایش'}`;
+        button.addEventListener('click',async()=>{ if(state.importBusy||state.previewBusy||pending) return; state.previewBusy=true; refresh(); try { const saved=await api(`/api/import/${item.draft_id}`); state.preview=saved.preview; state.draft=saved.preview.valid_count?item.draft_id:null; state.mapping=null; $('#column-mapping').hidden=true; $('#import-result').hidden=true; $('#edit-mapping').hidden=true; $('#only-errors').checked=false; $('#preview-file-name').textContent=`فایل ذخیره‌شده ${item.draft_id.slice(0,8)}`; $('#import-cashback-percent').value=saved.preview.cashback_percent; renderPreview(); $('#import-preview').hidden=false; message(`${saved.results.length} نتیجه ذخیره شده؛ ${saved.done?'همه سندهای معتبر پردازش شده‌اند؛ بررسی مجدد واریز اضافه نمی‌سازد.':'ادامه با تأیید شما انجام می‌شود.'}`); } catch(error) { message(error.message,'error'); } finally { state.previewBusy=false; refresh(); } }); box.append(button); });
+    } catch(error) { message(error.message,'error'); }
+  }
+  $('#refresh-imports').addEventListener('click',savedImports);
   async function commitDraft(draft,total) {
-    const combined={results:[],created:0,replayed:0,needs_review:0};
-    let offset=0;
+    const saved=await api(`/api/import/${draft}`);
+    let offset=saved.next_offset;
     while(offset<total) {
-      $('#commit-import').textContent=`در حال واریز ${Math.min(offset+1,total).toLocaleString('fa-IR')} از ${total.toLocaleString('fa-IR')}…`;
+      $('#commit-import').textContent=`در حال بررسی ${Math.min(offset+1,total).toLocaleString('fa-IR')} از ${total.toLocaleString('fa-IR')}…`;
       const batch=await post('/api/import/commit',{draft_id:draft,offset,confirm:true},[$('#commit-import')]);
-      combined.results.push(...batch.results); combined.created+=batch.created; combined.replayed+=batch.replayed; combined.needs_review+=batch.needs_review;
-      if(batch.done) return combined;
-      if(!Number.isInteger(batch.next_offset)||batch.next_offset<=offset) throw new Error('نتیجهٔ فایل کامل دریافت نشد؛ فایل را با همان شماره سندها دوباره بررسی کنید.');
+      if(batch.done) break;
+      if(!Number.isInteger(batch.next_offset)||batch.next_offset<=offset) throw new Error('پیشرفت فایل دریافت نشد؛ نتیجه فایل ذخیره‌شده را دوباره بررسی کنید.');
       offset=batch.next_offset;
     }
-    return combined;
+    const final=await api(`/api/import/${draft}`), results=final.results;
+    return {results,created:results.filter(row=>row.transaction_id&&!row.replayed).length,replayed:results.filter(row=>row.transaction_id&&row.replayed).length,needs_review:results.filter(row=>!row.transaction_id).length};
   }
   function renderPreview() {
     const data=state.preview; if(!data) return;
     const summary=$('#preview-summary'); summary.replaceChildren(); [[`${data.valid_count.toLocaleString('fa-IR')} واریز معتبر`,'ok'],[`${data.invalid_count.toLocaleString('fa-IR')} ردیف نیازمند اصلاح`,'bad'],[`جمع خرید: ${money(data.purchase_total,data.currency)}`,'ok'],[`${data.cashback_percent}٪ کش‌بک؛ جمع واریز: ${money(data.total,data.currency)}`,'ok']].forEach(([text,kind])=>{ const chip=document.createElement('span'); chip.className=`summary-chip ${kind}`; chip.textContent=text; summary.append(chip); });
-    const body=$('#preview-rows'); body.replaceChildren(); [...data.valid_rows,...data.invalid_rows].sort((a,b)=>a.row_number-b.row_number).filter(row=>!$('#only-errors').checked||row.errors.length).forEach(row=>{ const tr=document.createElement('tr'); [row.row_number,[row.reference,row.date].filter(Boolean).join(' / '),`${row.customer_name} · ${row.phone}`,row.amount?money(row.amount,row.currency):'—',row.errors.length?row.errors.join('، '):row.customer_action].forEach(text=>{ const cell=document.createElement('td'); cell.textContent=String(text??''); tr.append(cell); }); body.append(tr); });
+    const body=$('#preview-rows'); body.replaceChildren(); [...data.valid_rows,...data.invalid_rows].sort((a,b)=>a.row_number-b.row_number).filter(row=>!$('#only-errors').checked||row.errors.length).forEach(row=>{ const tr=document.createElement('tr'); [row.row_number,[row.reference,row.date].filter(Boolean).join(' / '),`${row.customer_name} · ${row.phone}`,row.company||'—',row.customer_id?(row.existing_company||'ثبت نشده'):'مشتری جدید',row.purchase_amount?money(row.purchase_amount,row.currency):'—',row.cashback_percent?`${row.cashback_percent}٪`:'—',row.amount?money(row.amount,row.currency):'—',row.note||'—',row.errors.length?row.errors.join('، '):[row.customer_action,row.company_notice].filter(Boolean).join(' · ')].forEach(text=>{ const cell=document.createElement('td'); cell.textContent=String(text??''); tr.append(cell); }); body.append(tr); });
   }
   $('#commit-import').addEventListener('click',async()=>{
     if(!state.draft||!state.writes||state.importBusy||pending) return;
@@ -202,8 +220,8 @@
     state.importBusy=true; refresh();
     try { const result=await commitDraft(draft,data.valid_count); const box=$('#import-result'); box.replaceChildren(); const summary=document.createElement('p'); summary.textContent=`واریز تازه: ${result.created} · قبلاً واریز شده: ${result.replayed} · نیازمند بررسی: ${result.needs_review}`; box.append(summary); result.results.forEach(row=>{ const item=document.createElement('p'); item.textContent=`سند ${row.reference}: ${row.error||`تراکنش ${row.transaction_id} · ${row.replayed?'بدون واریز دوباره':'واریز شد'}`}`; box.append(item); }); data.invalid_rows.forEach(row=>{ const item=document.createElement('p'); item.textContent=`ردیف ${row.row_number} · واریز نشد: ${row.errors.join('، ')}`; box.append(item); }); const download=document.createElement('button'); download.className='btn btn-secondary'; download.type='button'; download.textContent='دریافت گزارش واریز'; download.addEventListener('click',()=>downloadReport(result,data.invalid_rows)); box.append(download); box.hidden=false; box.className=`card result-box ${result.needs_review?'':'success'}`; if(!result.needs_review) { state.draft=null; $('#import-preview').hidden=true; } }
     catch(error) { message(`${error.message} فایل و شماره سندها را تغییر ندهید؛ بررسی دوباره با همان سندها از واریز تکراری جلوگیری می‌کند.`,'error'); }
-    finally { state.importBusy=false; $('#commit-import').textContent='تأیید واریزهای معتبر'; refresh(); }
+    finally { savedImports(); state.importBusy=false; $('#commit-import').textContent='تأیید واریزهای معتبر'; refresh(); }
   });
-  function downloadReport(result,invalid) { const safe=value=>{ const text=String(value??'').replace(/[\t\r\n]/g,' '); return /^[=+@-]/.test(text)?`'${text}`:text; }; const rows=[['شماره سند','شناسه تراکنش','شناسه مشتری','مبلغ خرید','درصد کش‌بک','کش‌بک واریزی','واحد پول','نتیجه'],...result.results.map(row=>[row.reference,row.transaction_id,row.customer_id,row.purchase_amount,row.cashback_percent,row.amount,row.currency,row.error||(row.replayed?'تکراری؛ بدون واریز دوباره':'واریز شد')]),...invalid.map(row=>[row.reference,'','',row.purchase_amount,row.cashback_percent,'',row.currency,row.errors.join('، ')])]; const url=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(row=>row.map(safe).join('\t')).join('\n')],{type:'text/tab-separated-values;charset=utf-8'})); const a=document.createElement('a'); a.href=url; a.download='afrand-wallet-results.tsv'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
-  refresh(); loadStatus();
+  function downloadReport(result,invalid) { const safe=value=>{ const text=String(value??'').replace(/[\t\r\n]/g,' '); return /^[=+@-]/.test(text)?`'${text}`:text; }; const rows=[['شماره سند','شناسه تراکنش','شناسه مشتری','مبلغ خرید','درصد کش‌بک','کش‌بک واریزی','واحد پول','نتیجه'],...result.results.map(row=>[row.reference,row.transaction_id,row.customer_id,row.purchase_amount,row.cashback_percent,row.amount,row.currency,row.error||(row.replayed?'تکراری؛ بدون واریز دوباره':'واریز شد')]),...invalid.map(row=>[row.reference,'','',row.purchase_amount,row.cashback_percent,'',row.currency,row.errors.join('، ')])]; const url=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(row=>row.map(safe).join('\t')).join('\n')],{type:'text/tab-separated-values;charset=utf-8'})); const a=document.createElement('a'); a.href=url; a.download='customer-wallet-results.tsv'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
+  refresh(); loadStatus(); savedImports();
 })();

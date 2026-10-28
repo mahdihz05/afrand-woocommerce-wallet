@@ -1,7 +1,11 @@
 import re
+import secrets
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from flask import Flask
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import generate_password_hash
 from panel.app import create_app
@@ -10,7 +14,7 @@ from panel.app import create_app
 class LoginTests(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
-        self.app = create_app({'TESTING': True, 'SECRET_KEY': 'auth-test-secret',
+        self.app = create_app({'TESTING': True, 'SECRET_KEY': secrets.token_hex(32),
             'DATABASE': str(Path(self.folder.name) / 'db.sqlite3'), 'PANEL_AUTH_ENABLED': True,
             'PANEL_USERNAME': 'demo', 'PANEL_PASSWORD_HASH': generate_password_hash('test-pass')})
         self.client = self.app.test_client()
@@ -80,4 +84,49 @@ class LoginTests(unittest.TestCase):
 
     def test_auth_configuration_requires_password_hash(self):
         with self.assertRaisesRegex(ValueError, 'PANEL_PASSWORD_HASH'):
-            create_app({'PANEL_AUTH_ENABLED':True,'DATABASE':str(Path(self.folder.name)/'other.sqlite3')})
+            create_app({'PANEL_AUTH_ENABLED':True, 'SECRET_KEY':secrets.token_hex(32),
+                        'DATABASE':str(Path(self.folder.name)/'other.sqlite3')})
+
+    def test_unsafe_signing_keys_fail_before_database_initialization(self):
+        for wallet_mode in [False, True]:
+            for key in [None, '', ' ' * 40, 'local-demo-change-me',
+                        'short-secret', 'a' * 64, b'local-demo-change-me']:
+                with self.subTest(wallet_mode=wallet_mode, key_type=type(key).__name__), patch('panel.app.Ledger') as ledger:
+                    with self.assertRaisesRegex(ValueError, 'SECRET_KEY'):
+                        create_app({**self.app.config, 'WALLET_MODE': wallet_mode, 'SECRET_KEY': key})
+                    ledger.assert_not_called()
+        with self.assertRaisesRegex(ValueError, 'SECRET_KEY'):
+            create_app({'PANEL_AUTH_ENABLED': True,
+                        'PANEL_PASSWORD_HASH': self.app.config['PANEL_PASSWORD_HASH']})
+
+    def test_unsafe_rotation_keys_are_rejected(self):
+        for fallbacks in [['local-demo-change-me'], [''], ['x' * 64], 'not-a-list']:
+            with self.subTest(fallback_type=type(fallbacks).__name__):
+                with self.assertRaisesRegex(ValueError, 'SECRET_KEY'):
+                    create_app({**self.app.config, 'SECRET_KEY_FALLBACKS': fallbacks})
+
+    def test_cookie_forged_with_public_default_does_not_authenticate(self):
+        signer_app = Flask(__name__)
+        signer_app.secret_key = 'local-demo-change-me'
+        signer = SecureCookieSessionInterface().get_signing_serializer(signer_app)
+        cookie = signer.dumps({'panel_user': 'demo'})
+        for wallet_mode in [False, True]:
+            with self.subTest(wallet_mode=wallet_mode):
+                app = create_app({**self.app.config, 'WALLET_MODE': wallet_mode,
+                                  'SECRET_KEY_FALLBACKS': [secrets.token_hex(32)]})
+                client = app.test_client()
+                client.set_cookie(app.config['SESSION_COOKIE_NAME'], cookie)
+                self.assertEqual(client.get('/api/status').status_code, 401)
+                self.assertEqual(client.get('/').status_code, 302)
+
+    def test_random_byte_key_and_safe_rotation_preserve_valid_sessions(self):
+        # Edge whitespace is legitimate entropy in raw byte keys, not padding.
+        old_key = b' ' + bytes(range(1, 32))
+        app = create_app({**self.app.config, 'SECRET_KEY': bytes(range(32)),
+                          'SECRET_KEY_FALLBACKS': [old_key]})
+        signer_app = Flask(__name__)
+        signer_app.secret_key = old_key
+        signer = SecureCookieSessionInterface().get_signing_serializer(signer_app)
+        client = app.test_client()
+        client.set_cookie(app.config['SESSION_COOKIE_NAME'], signer.dumps({'panel_user': 'demo'}))
+        self.assertEqual(client.get('/').status_code, 200)

@@ -5,7 +5,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 load_dotenv()
 app = create_app({
-    "SECRET_KEY": os.getenv("FLASK_SECRET_KEY", "local-demo-change-me"),
+    **({"DATABASE": os.path.abspath(os.environ["AFRAND_DATABASE"])} if os.getenv("AFRAND_DATABASE") else {}),
+    "SECRET_KEY": os.getenv("FLASK_SECRET_KEY"),
     "WC_BASE_URL": os.getenv("WC_BASE_URL", ""),
     "WC_STAGING_HOST": os.getenv("WC_STAGING_HOST", ""),
     "WC_CONSUMER_KEY": os.getenv("WC_CONSUMER_KEY", ""),

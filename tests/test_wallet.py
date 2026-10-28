@@ -41,14 +41,19 @@ class FakeWallet:
             found = [c for c in self.customers if c['phone'] == normalize_phone(payload['phone'])]
             if len(found) > 1: raise WooError('ambiguous phone',409)
             if found: return {'customer':found[0],'replayed':True}
-            c = {k:v for k,v in payload.items() if k in {'first_name','last_name','phone'}}
+            c = {k:v for k,v in payload.items() if k in {'first_name','last_name','phone','company'}}
             c['id'] = 20+len(self.customers); self.customers.append(c)
             return {'customer':c,'replayed':False}
         if route == 'customers/lookup':
+            assert len(payload['phones']) <= 100
             return {'matches':{phone:[c for c in self.customers if c['phone']==phone] for phone in payload['phones']}}
         if route.startswith('customers/'):
             customer = next((c for c in self.customers if c['id'] == int(route.split('/')[1])),None)
             if not customer: raise WooError('not found',404)
+            if method == 'PUT':
+                if customer.get('company','') != payload['expected_company']: raise WooError('company conflict',409)
+                customer['company'] = payload['company']
+                return {'customer':customer.copy()}
             rows = [t for t in self.transactions if t['customer_id'] == customer['id']]
             return {'customer':customer,'wallet':{'balance':str(sum(int(t['amount']) for t in rows)),'currency':self.currency,
                     'transactions':[{**t,'type':'credit','date':'2026-10-08','details':t['note']} for t in rows]}}
@@ -207,18 +212,41 @@ class WalletTests(unittest.TestCase):
             self.assertGreater(response['next_offset'],offset); offset=response['next_offset']
         self.assertEqual(created,5); self.assertEqual(len(self.woo.transactions),5)
 
-    def test_excel_mapping_extra_columns_heading_and_500_limit(self):
+    def test_excel_mapping_extra_columns_heading_and_1000_limit(self):
         data=workbook([['junk','Other']],headers=['گزارش'])
         response=self.client.post('/api/import/preview',data={'file':(data,'wallet.xlsx')})
         self.assertTrue(response.json['mapping_required'])
         self.assertNotIn('email',[f['key'] for f in response.json['fields']])
-        too_many=self.preview([[f'S{i}','مریم','09121234567',100,'IRT'] for i in range(501)])
+        too_many=self.preview([[f'S{i}','مریم','09121234567',100,'IRT'] for i in range(1001)])
         self.assertEqual(too_many.status_code,400)
 
     def test_template_download_has_wallet_columns_no_email_product(self):
         data=self.client.get('/template.xlsx').data; wb=load_workbook(io.BytesIO(data),read_only=True)
         headers=next(wb.active.values); wb.close()
         self.assertIn('مبلغ خرید',headers); self.assertNotIn('ایمیل',headers); self.assertNotIn('کد کالا',headers)
+        self.assertIn('عنوان تراکنش',headers)
+
+    def test_manual_transaction_title_reaches_wallet_history(self):
+        title = 'کش‌بک خرید پاییز <نمونه>'
+        response = self.client.post('/api/wallet/credits',json=self.payload(note=title))
+        self.assertEqual(response.status_code,200)
+        self.assertIn(title,self.woo.transactions[0]['note'])
+        history = self.client.get('/api/customers/7')
+        self.assertEqual(history.status_code,200)
+        self.assertIn(title,history.json['wallet']['transactions'][0]['details'])
+
+    def test_excel_transaction_title_and_legacy_aliases(self):
+        for index, header in enumerate(('عنوان تراکنش','شرح','شرح خرید','توضیحات','شرح سند','note')):
+            with self.subTest(header=header):
+                title = 'کش‌بک خرید پاییز'
+                data = workbook([[f'TITLE-{index}','مریم','09121234567',100000,'IRT',title]],
+                    headers=['شماره سند','نام مشتری','موبایل','مبلغ خرید','واحد پول',header])
+                preview = self.client.post('/api/import/preview',data={'file':(data,'title.xlsx')})
+                self.assertEqual(preview.status_code,200)
+                self.assertEqual(preview.json['valid_rows'][0]['note'],title)
+                commit = self.client.post('/api/import/commit',json={'draft_id':preview.json['draft_id'],'confirm':True})
+                self.assertEqual(commit.json['created'],1)
+                self.assertIn(title,self.woo.transactions[-1]['note'])
 
     def test_server_credits_cashback_only_and_ignores_client_amount(self):
         response=self.client.post('/api/wallet/credits',json=self.payload(purchase_amount='100000',amount='100000'))

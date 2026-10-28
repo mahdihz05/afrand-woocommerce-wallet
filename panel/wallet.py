@@ -25,7 +25,8 @@ FIELDS = [
     ('phone', 'موبایل', True, ['شماره موبایل', 'تلفن همراه', 'شماره تماس', 'تلفن', 'customer phone', 'customer_phone']),
     ('amount', 'مبلغ خرید', True, ['مبلغ واریز', 'مبلغ', 'مبلغ کل', 'جمع کل', 'بستانکار', 'مبلغ ردیف', 'amount', 'line_total']),
     ('currency', 'واحد پول', False, ['currency']),
-    ('note', 'شرح', False, ['توضیحات', 'شرح سند', 'note']),
+    ('note', 'عنوان تراکنش', False, ['شرح', 'شرح خرید', 'توضیحات', 'شرح سند', 'note', 'transaction title']),
+    ('company', 'شرکت', False, ['نام شرکت', 'company', 'billing_company']),
 ]
 
 
@@ -62,7 +63,7 @@ def cashback_values(purchase, percent='5'):
 
 def cashback_note(values, note):
     if len(note) > 180:
-        raise ValueError('شرح خرید حداکثر ۱۸۰ نویسه است.')
+        raise ValueError('عنوان تراکنش حداکثر ۱۸۰ نویسه است.')
     return f"کش‌بک {values['cashback_percent']}٪ خرید {values['purchase_amount']} {values['currency']}" + (f' — {note}' if note else '')
 
 
@@ -74,7 +75,10 @@ def customer_values(data):
     last = str(data.get('last_name') or '').strip()
     if not re.fullmatch(r'09\d{9}', phone) or not first or len(first) > 80 or len(last) > 80:
         raise ValueError('نام و شمارهٔ موبایل معتبر مشتری را وارد کنید.')
-    return {'phone': phone, 'first_name': first, 'last_name': last}
+    company = str(data.get('company') or '').strip()
+    if len(company) > 120:
+        raise ValueError('شرکت حداکثر ۱۲۰ نویسه است.')
+    return {'phone': phone, 'first_name': first, 'last_name': last, 'company': company}
 
 
 def configure_wallet(app, woo, ledger):
@@ -151,6 +155,20 @@ def configure_wallet(app, woo, ledger):
             return fail('تأیید ثبت مشتری لازم است.')
         return jsonify(remote('POST', 'customers/create', payload={**values, 'confirm': True}))
 
+    @app.put('/api/customers/<int:customer_id>/company')
+    def update_company(customer_id):
+        blocked = allowed(True)
+        if blocked:
+            return blocked
+        data = request.get_json(silent=True)
+        if (not isinstance(data, dict) or data.get('confirm') is not True
+                or not isinstance(data.get('company'), str)
+                or not isinstance(data.get('expected_company'), str)
+                or len(data['company'].strip()) > 120 or len(data['expected_company']) > 120):
+            return fail('شرکت، مقدار قبلی و تأیید صریح تغییر لازم است؛ حداکثر ۱۲۰ نویسه.')
+        return jsonify(remote('PUT', f'customers/{customer_id}/company', payload={
+            'company': data['company'].strip(), 'expected_company': data['expected_company'], 'confirm': True}))
+
     def credit_payload(data):
         if not isinstance(data, dict) or data.get('confirm') is not True:
             raise ValueError('تأیید واریز لازم است.')
@@ -200,16 +218,17 @@ def configure_wallet(app, woo, ledger):
         for cell in sheet[1]:
             cell.font = Font(name='Tahoma', bold=True, color='FFFFFF'); cell.fill = PatternFill('solid', fgColor='235BAF'); cell.alignment = Alignment(horizontal='right')
         for column, width in {'A':24,'B':18,'C':28,'D':20,'E':20,'F':16,'G':38}.items(): sheet.column_dimensions[column].width = width
-        sheet.freeze_panes = 'A2'; sheet.auto_filter.ref = 'A1:G1'
+        sheet.column_dimensions['H'].width = 28
+        sheet.freeze_panes = 'A2'; sheet.auto_filter.ref = 'A1:H1'
         stream = io.BytesIO(); workbook.save(stream); stream.seek(0); return stream
 
     @app.get('/template.xlsx')
     def template():
-        return send_file(template_bytes(), download_name='afrand-wallet-template.xlsx', as_attachment=True)
+        return send_file(template_bytes(), download_name='customer-wallet-template.xlsx', as_attachment=True)
 
     @app.get('/demo.xlsx')
     def sample():
-        return send_file(Path(app.root_path).parent / 'demo' / 'afrand-wallet-sample.xlsx', as_attachment=True)
+        return send_file(Path(app.root_path).parent / 'demo' / 'afrand-wallet-sample.xlsx', download_name='wallet-sample.xlsx', as_attachment=True)
 
     @app.post('/api/import/preview')
     def preview():
@@ -222,9 +241,9 @@ def configure_wallet(app, woo, ledger):
         try:
             mapping = json.loads(request.form['mapping']) if request.form.get('mapping') else None
             header = int(request.form['header_row']) if request.form.get('header_row') else None
-            parsed = read_accounting_export(file.stream, mapping, header, fields=FIELDS)
+            parsed = read_accounting_export(file.stream, mapping, header, fields=FIELDS, max_rows=1000)
         except Exception:
-            return fail('فایل یا انتخاب ستون‌ها معتبر نیست؛ فایل xlsx سالم و حداکثر ۵۰۰ ردیف انتخاب کنید.')
+            return fail('فایل یا انتخاب ستون‌ها معتبر نیست؛ فایل xlsx سالم و حداکثر ۱۰۰۰ ردیف انتخاب کنید.')
         if parsed['mapping_required']:
             return jsonify(parsed)
         try:
@@ -242,6 +261,7 @@ def configure_wallet(app, woo, ledger):
             row['customer_name'] = str(source.get('customer_name') or '').strip()
             row['phone'] = normalize_phone(source.get('phone'))
             row['note'] = str(source.get('note') or '').strip()
+            row['company'] = str(source.get('company') or '').strip()
             unit = str(source.get('currency') or '').strip().casefold()
             aliases = {'irt':'IRT','تومان':'IRT','تومن':'IRT','irr':'IRR','ریال':'IRR'}
             if unit and aliases.get(unit) != currency: row['errors'].append('واحد پول فایل با کیف پول یکسان نیست؛ تبدیل خودکار انجام نمی‌شود')
@@ -250,24 +270,90 @@ def configure_wallet(app, woo, ledger):
             if refs[row['reference']] > 1: row['errors'].append('شماره سند در فایل تکراری است؛ هر واریز یک سند یکتا دارد')
             if not row['customer_name'] or len(row['customer_name']) > 80: row['errors'].append('نام مشتری معتبر لازم است')
             if not re.fullmatch(r'09\d{9}', row['phone']): row['errors'].append('موبایل معتبر لازم است؛ صفر ابتدای شماره حفظ شود')
-            if len(row['note']) > 180: row['errors'].append('شرح حداکثر ۱۸۰ نویسه است')
+            if len(row['note']) > 180: row['errors'].append('عنوان تراکنش حداکثر ۱۸۰ نویسه است')
+            if len(row['company']) > 120: row['errors'].append('شرکت حداکثر ۱۲۰ نویسه است')
             try: row.update(cashback_values(source.get('amount'), percent))
             except ValueError as error: row['errors'].append(str(error))
             normalized.append(row)
         phones = list({row['phone'] for row in normalized if not row['errors']})
-        matches = remote('POST', 'customers/lookup', payload={'phones': phones})['matches'] if phones else {}
+        matches = {}
+        for start in range(0, len(phones), 100):
+            matches.update(remote('POST', 'customers/lookup', payload={'phones': phones[start:start+100]})['matches'])
         for row in normalized:
             if not row['errors']:
                 found = matches.get(row['phone'], [])
                 if len(found) > 1: row['errors'].append('چند مشتری با این موبایل وجود دارد؛ واریز خودکار انجام نمی‌شود')
                 row['customer_id'] = found[0]['id'] if len(found) == 1 else None
                 row['customer_action'] = 'مشتری موجود' if row['customer_id'] else 'ساخت مشتری جدید'
+                row['existing_company'] = str(found[0].get('company') or '') if len(found) == 1 else None
+                row['company_notice'] = ''
+                if row['customer_id'] and row['company'] != row['existing_company']:
+                    row['company_notice'] = 'شرکت فایل با شرکت فعلی متفاوت است؛ شرکت فعلی حفظ می‌شود. تغییر فقط از فرم ویرایش شرکت مشتری انجام می‌شود.'
         valid = [row for row in normalized if not row['errors']]
         invalid = [row for row in normalized if row['errors']]
         draft = uuid.uuid4().hex
         # A wallet-specific envelope cannot be mistaken for historical order drafts.
         ledger.save_draft(draft, [{'kind':'wallet-cashback-v2', 'rows':valid, 'currency':currency}])
-        return jsonify(**parsed, draft_id=draft, valid_rows=valid, invalid_rows=invalid, valid_count=len(valid), invalid_count=len(invalid), currency=currency, cashback_percent=percent, purchase_total=str(sum(Decimal(row['purchase_amount']) for row in valid)), total=str(sum(Decimal(row['amount']) for row in valid)))
+        preview_data = dict(**parsed, draft_id=draft, valid_rows=valid, invalid_rows=invalid, valid_count=len(valid), invalid_count=len(invalid), currency=currency, cashback_percent=percent, purchase_total=str(sum(Decimal(row['purchase_amount']) for row in valid)), total=str(sum(Decimal(row['amount']) for row in valid)))
+        ledger.save_wallet_import(preview_data)
+        return jsonify(preview_data)
+
+    @app.get('/api/imports')
+    def imports():
+        return allowed() or jsonify(imports=ledger.wallet_imports())
+
+    @app.get('/api/import/<draft_id>')
+    def import_status(draft_id):
+        blocked = allowed()
+        if blocked:
+            return blocked
+        saved = ledger.wallet_import(draft_id)
+        return jsonify(saved) if saved else fail('فایل ذخیره‌شده پیدا نشد.', 404)
+
+    def execute_row(row):
+        key = hashlib.sha256((woo.base_url + ':wallet-reference:' + row['reference']).encode()).hexdigest()
+        meaning = {field: row[field] for field in ('phone', 'purchase_amount', 'cashback_percent', 'amount', 'currency', 'note')}
+        fingerprint = hashlib.sha256(json.dumps(meaning, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        with ledger.wallet_document_lock(key):
+            saved = ledger.bind_wallet_document(key, fingerprint)
+            if saved['result_json']:
+                return {**saved['result_json'], 'replayed': True}
+            payload = saved['payload_json']
+            if payload:
+                # A previous dispatch may have completed after our HTTP timeout.
+                # Reconcile first; only a 404 permits the identical, protected key.
+                try:
+                    result = remote('GET', f'operations/{key}', params={'expected_note': payload['note']})
+                except WooError as error:
+                    if error.status != 404:
+                        raise
+                else:
+                    if (str(result.get('customer_id')) != str(payload['customer_id'])
+                            or Decimal(str(result.get('amount', 'NaN'))) != Decimal(payload['amount'])
+                            or result.get('currency') != payload['currency']
+                            or result.get('verified_note', result.get('note')) != payload['note']):
+                        raise ValueError('نتیجهٔ وردپرس با اطلاعات ذخیره‌شدهٔ سند یکسان نیست؛ بررسی لازم است.')
+                    result.update(reference=row['reference'], purchase_amount=row['purchase_amount'], cashback_percent=row['cashback_percent'])
+                    ledger.save_wallet_document(key, result=result)
+                    return result
+            if not payload:
+                found = remote('GET', 'customers', params={'q': row['phone']})['customers']
+                if len(found) > 1:
+                    raise WooError('موبایل به چند حساب تعلق دارد.', 409)
+                customer_id = found[0]['id'] if found else None
+                if not customer_id:
+                    name = row['customer_name'].split(' ', 1)
+                    created = remote('POST', 'customers/create', payload={
+                        'first_name': name[0], 'last_name': name[1] if len(name)>1 else '',
+                        'phone': row['phone'], 'company': row['company'], 'confirm': True})
+                    customer_id = created['customer']['id']
+                payload = dict(request_id=key, customer_id=customer_id, amount=row['amount'], currency=row['currency'],
+                               note=cashback_note(row, row['note'] or ('سند '+row['reference'])), confirm=True)
+                ledger.save_wallet_document(key, payload=payload)
+            result = remote('POST', 'credits', payload=payload)
+            result.update(reference=row['reference'], purchase_amount=row['purchase_amount'], cashback_percent=row['cashback_percent'])
+            ledger.save_wallet_document(key, result=result)
+            return result
 
     @app.post('/api/import/commit')
     def commit():
@@ -277,29 +363,24 @@ def configure_wallet(app, woo, ledger):
         data = request.get_json(silent=True)
         if not isinstance(data, dict) or data.get('confirm') is not True:
             return fail('تأیید واریز فاکتورها لازم است.')
-        draft = ledger.get_draft(str(data.get('draft_id') or ''))
-        if not draft or len(draft) != 1 or draft[0].get('kind') != 'wallet-cashback-v2':
+        draft_id = str(data.get('draft_id') or '')
+        saved = ledger.wallet_import(draft_id)
+        if not saved:
             return fail('پیش‌نمایش منقضی یا نامعتبر است؛ فایل را دوباره بررسی کنید.')
+        rows = saved['preview']['valid_rows']
         offset = data.get('offset', 0)
-        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= len(draft[0]['rows']):
+        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= len(rows):
             return fail('مرحلهٔ واریز معتبر نیست.')
         # Bound each request while the UI advances through a larger workbook.
-        batch = draft[0]['rows'][offset:offset+2]
+        ledger.confirm_wallet_import(draft_id)
+        batch = rows[offset:offset+2]
         results = []
-        for row in batch:
-            key = hashlib.sha256((woo.base_url + ':wallet-reference:' + row['reference']).encode()).hexdigest()
+        for index, row in enumerate(batch, offset):
             try:
-                # Re-match at commit: a preview must never grant stale customer identity.
-                found = remote('GET','customers',params={'q':row['phone']})['customers']
-                if len(found) > 1: raise WooError('موبایل به چند حساب تعلق دارد.',409)
-                customer_id = found[0]['id'] if found else None
-                if not customer_id:
-                    name = row['customer_name'].split(' ',1)
-                    created = remote('POST','customers/create',payload={'first_name':name[0],'last_name':name[1] if len(name)>1 else '', 'phone':row['phone'],'confirm':True})
-                    customer_id = created['customer']['id']
-                result = remote('POST','credits',payload={'request_id':key,'customer_id':customer_id,'amount':row['amount'],'currency':row['currency'],'note':cashback_note(row, row['note'] or ('سند '+row['reference'])), 'confirm':True})
-                results.append({**result,'reference':row['reference'], 'purchase_amount':row['purchase_amount'], 'cashback_percent':row['cashback_percent']})
-            except WooError as error:
-                results.append({'reference':row['reference'],'state':'needs_review','error':str(error) if error.status else 'پاسخ نامشخص؛ نتیجهٔ سند در وردپرس بررسی شود.'})
+                result = execute_row(row)
+            except (WooError, ValueError, TimeoutError) as error:
+                result = {'reference':row['reference'], 'state':'needs_review', 'error':str(error)}
+            ledger.save_wallet_result(draft_id, index, result)
+            results.append(result)
         next_offset = offset + len(batch)
-        return jsonify(results=results, created=sum(not row.get('replayed') for row in results if row.get('transaction_id')), replayed=sum(bool(row.get('replayed')) for row in results), needs_review=sum(row.get('state')=='needs_review' for row in results), next_offset=next_offset, done=next_offset>=len(draft[0]['rows']))
+        return jsonify(results=results, created=sum(not row.get('replayed') for row in results if row.get('transaction_id')), replayed=sum(bool(row.get('replayed')) for row in results), needs_review=sum(row.get('state')=='needs_review' for row in results), next_offset=next_offset, done=next_offset>=len(rows))
