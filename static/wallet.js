@@ -172,12 +172,21 @@
   $('#excel-file').addEventListener('change',()=>{ state.draft=null; state.preview=null; state.mapping=null; $('#import-preview').hidden=true; $('#column-mapping').hidden=true; $('#import-result').hidden=true; refresh(); });
   $('#import-cashback-percent').addEventListener('input',()=>{ state.draft=null; state.preview=null; $('#import-preview').hidden=true; refresh(); });
   $('#import-form').addEventListener('submit',event=>{ event.preventDefault(); previewFile(); });
-  function updateImportMode() {
+  function showImportMode() {
     const fixed=$('#amount-mode').value==='fixed';
     $('#fixed-amount-field').hidden=!fixed;
     const percent=$('#import-cashback-percent'); percent.hidden=fixed; percent.required=!fixed;
     document.querySelector('label[for="import-cashback-percent"]').hidden=fixed;
     percent.nextElementSibling.hidden=fixed;
+  }
+  function restoreImportOptions(preview) {
+    $('#amount-mode').value=preview.amount_mode==='fixed'?'fixed':'excel';
+    $('#fixed-amount').value=preview.amount_mode==='fixed'?preview.fixed_amount:'';
+    $('#import-cashback-percent').value=preview.amount_mode==='fixed'?'5':preview.cashback_percent;
+    showImportMode();
+  }
+  function updateImportMode() {
+    showImportMode();
     state.draft=null; state.preview=null; $('#import-preview').hidden=true; refresh();
   }
   $('#amount-mode').addEventListener('change',async()=>{
@@ -206,7 +215,7 @@
   async function savedImports() {
     try { const data=await api('/api/imports'); const box=$('#saved-imports'); box.replaceChildren();
       data.imports.forEach(item=>{ const button=document.createElement('button'); button.className='btn btn-secondary'; button.type='button'; button.textContent=`${item.created_at} · ${item.draft_id.slice(0,8)} · ${item.confirmed?'اجرا تأیید شده':'پیش‌نمایش'}`;
-        button.addEventListener('click',async()=>{ if(state.importBusy||state.previewBusy||pending) return; state.previewBusy=true; refresh(); try { const saved=await api(`/api/import/${item.draft_id}`); state.preview=saved.preview; state.draft=saved.preview.valid_count?item.draft_id:null; state.mapping=null; $('#column-mapping').hidden=true; $('#import-result').hidden=true; $('#edit-mapping').hidden=true; $('#only-errors').checked=false; $('#preview-file-name').textContent=`فایل ذخیره‌شده ${item.draft_id.slice(0,8)}`; $('#import-cashback-percent').value=saved.preview.amount_mode==='fixed'?'5':saved.preview.cashback_percent; renderPreview(); $('#import-preview').hidden=false; message(`${saved.results.length} نتیجه ذخیره شده؛ ${saved.done?'همه سندهای معتبر پردازش شده‌اند؛ بررسی مجدد واریز اضافه نمی‌سازد.':'ادامه با تأیید شما انجام می‌شود.'}`); } catch(error) { message(error.message,'error'); } finally { state.previewBusy=false; refresh(); } }); box.append(button); });
+        button.addEventListener('click',async()=>{ if(state.importBusy||state.previewBusy||pending) return; state.previewBusy=true; refresh(); try { const saved=await api(`/api/import/${item.draft_id}`); state.preview=saved.preview; state.draft=saved.preview.valid_count?item.draft_id:null; state.mapping=null; $('#column-mapping').hidden=true; $('#import-result').hidden=true; $('#edit-mapping').hidden=true; $('#only-errors').checked=false; $('#preview-file-name').textContent=`فایل ذخیره‌شده ${item.draft_id.slice(0,8)}`; restoreImportOptions(saved.preview); renderPreview(); $('#import-preview').hidden=false; message(`${saved.results.length} نتیجه ذخیره شده؛ ${saved.done?'همه سندهای معتبر پردازش شده‌اند؛ بررسی مجدد واریز اضافه نمی‌سازد.':'ادامه با تأیید شما انجام می‌شود.'}`); } catch(error) { message(error.message,'error'); } finally { state.previewBusy=false; refresh(); } }); box.append(button); });
     } catch(error) { message(error.message,'error'); }
   }
   $('#refresh-imports').addEventListener('click',savedImports);
