@@ -224,7 +224,7 @@ class WalletTests(unittest.TestCase):
         data=self.client.get('/template.xlsx').data; wb=load_workbook(io.BytesIO(data),read_only=True)
         headers=next(wb.active.values); wb.close()
         self.assertIn('مبلغ خرید',headers); self.assertNotIn('ایمیل',headers); self.assertNotIn('کد کالا',headers)
-        self.assertIn('عنوان تراکنش',headers)
+        self.assertEqual(list(headers), ['نام', 'شماره', 'شرکت', 'مبلغ خرید'])
 
     def test_manual_transaction_title_reaches_wallet_history(self):
         title = 'کش‌بک خرید پاییز <نمونه>'

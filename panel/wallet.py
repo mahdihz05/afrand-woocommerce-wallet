@@ -19,10 +19,10 @@ from .woo import WooError
 ROOT = 'afrand-wallet'
 DIGITS = str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789')
 FIELDS = [
-    ('reference', 'شماره سند', True, ['شماره فاکتور', 'شماره رسید', 'کد پیگیری', 'reference', 'order_ref', 'invoice no']),
+    ('reference', 'شماره سند', False, ['شماره فاکتور', 'شماره رسید', 'کد پیگیری', 'reference', 'order_ref', 'invoice no']),
     ('date', 'تاریخ', False, ['تاریخ سند', 'تاریخ فاکتور', 'date']),
-    ('customer_name', 'نام مشتری', True, ['نام طرف حساب', 'طرف حساب', 'نام و نام خانوادگی', 'customer name']),
-    ('phone', 'موبایل', True, ['شماره موبایل', 'تلفن همراه', 'شماره تماس', 'تلفن', 'customer phone', 'customer_phone']),
+    ('customer_name', 'نام مشتری', True, ['نام', 'اسم', 'نام طرف حساب', 'طرف حساب', 'نام و نام خانوادگی', 'customer name']),
+    ('phone', 'موبایل', True, ['شماره', 'شماره موبایل', 'تلفن همراه', 'شماره تماس', 'تلفن', 'customer phone', 'customer_phone']),
     ('amount', 'مبلغ خرید', True, ['مبلغ واریز', 'مبلغ', 'مبلغ کل', 'جمع کل', 'بستانکار', 'مبلغ ردیف', 'amount', 'line_total']),
     ('currency', 'واحد پول', False, ['currency']),
     ('note', 'عنوان تراکنش', False, ['شرح', 'شرح خرید', 'توضیحات', 'شرح سند', 'note', 'transaction title']),
@@ -214,7 +214,7 @@ def configure_wallet(app, woo, ledger):
     def template_bytes():
         workbook = Workbook(); sheet = workbook.active
         sheet.title = 'واریز کیف پول'; sheet.sheet_view.rightToLeft = True
-        sheet.append([field[1] for field in FIELDS])
+        sheet.append(['نام', 'شماره', 'شرکت', 'مبلغ خرید'])
         for cell in sheet[1]:
             cell.font = Font(name='Tahoma', bold=True, color='FFFFFF'); cell.fill = PatternFill('solid', fgColor='235BAF'); cell.alignment = Alignment(horizontal='right')
         for column, width in {'A':24,'B':18,'C':28,'D':20,'E':20,'F':16,'G':38}.items(): sheet.column_dimensions[column].width = width
@@ -238,22 +238,36 @@ def configure_wallet(app, woo, ledger):
         file = request.files.get('file')
         if not file or not file.filename.lower().endswith('.xlsx'):
             return fail('فایل اکسل با پسوند xlsx انتخاب کنید.')
+        mode = request.form.get('amount_mode', 'excel')
+        if mode not in {'excel', 'fixed'}:
+            return fail('روش مبلغ معتبر نیست.')
+        fields = [(k, label, required and not (mode == 'fixed' and k == 'amount'), aliases) for k, label, required, aliases in FIELDS]
         try:
             mapping = json.loads(request.form['mapping']) if request.form.get('mapping') else None
             header = int(request.form['header_row']) if request.form.get('header_row') else None
-            parsed = read_accounting_export(file.stream, mapping, header, fields=FIELDS, max_rows=1000)
+            parsed = read_accounting_export(file.stream, mapping, header, fields=fields, max_rows=1000, positional_fields=['customer_name', 'phone', 'company', 'amount'])
         except Exception:
             return fail('فایل یا انتخاب ستون‌ها معتبر نیست؛ فایل xlsx سالم و حداکثر ۱۰۰۰ ردیف انتخاب کنید.')
         if parsed['mapping_required']:
             return jsonify(parsed)
         try:
-            percent = cashback_values('100000000', request.form.get('cashback_percent', '5'))['cashback_percent']
+            fixed = amount_value(request.form.get('fixed_amount')) if mode == 'fixed' else None
+            percent = '0' if mode == 'fixed' else cashback_values('100000000', request.form.get('cashback_percent', '5'))['cashback_percent']
         except ValueError as error:
             return fail(str(error))
         settings = details(); currency = settings['currency']
         if currency not in {'IRT', 'IRR'}:
             return fail('واحد پول فروشگاه با دموی واریز هماهنگ نیست.')
-        rows = parsed.pop('rows'); refs = Counter(str(row.get('reference') or '').strip() for row in rows)
+        rows = parsed.pop('rows')
+        for source in rows:
+            if not str(source.get('reference') or '').strip():
+                try:
+                    identity_amount = fixed if mode == 'fixed' else amount_value(source.get('amount'))
+                except ValueError:
+                    identity_amount = str(source.get('amount'))
+                identity = [normalize_phone(source.get('phone')), mode, identity_amount]
+                source['reference'] = 'auto-' + hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
+        refs = Counter(str(row.get('reference') or '').strip() for row in rows)
         normalized = []
         for source in rows:
             row = {**source, 'errors': []}
@@ -272,7 +286,8 @@ def configure_wallet(app, woo, ledger):
             if not re.fullmatch(r'09\d{9}', row['phone']): row['errors'].append('موبایل معتبر لازم است؛ صفر ابتدای شماره حفظ شود')
             if len(row['note']) > 180: row['errors'].append('عنوان تراکنش حداکثر ۱۸۰ نویسه است')
             if len(row['company']) > 120: row['errors'].append('شرکت حداکثر ۱۲۰ نویسه است')
-            try: row.update(cashback_values(source.get('amount'), percent))
+            row['amount_mode'] = mode
+            try: row.update({'purchase_amount': fixed, 'cashback_percent': '0', 'amount': fixed} if mode == 'fixed' else cashback_values(source.get('amount'), percent))
             except ValueError as error: row['errors'].append(str(error))
             normalized.append(row)
         phones = list({row['phone'] for row in normalized if not row['errors']})
@@ -294,7 +309,7 @@ def configure_wallet(app, woo, ledger):
         draft = uuid.uuid4().hex
         # A wallet-specific envelope cannot be mistaken for historical order drafts.
         ledger.save_draft(draft, [{'kind':'wallet-cashback-v2', 'rows':valid, 'currency':currency}])
-        preview_data = dict(**parsed, draft_id=draft, valid_rows=valid, invalid_rows=invalid, valid_count=len(valid), invalid_count=len(invalid), currency=currency, cashback_percent=percent, purchase_total=str(sum(Decimal(row['purchase_amount']) for row in valid)), total=str(sum(Decimal(row['amount']) for row in valid)))
+        preview_data = dict(**parsed, draft_id=draft, valid_rows=valid, invalid_rows=invalid, valid_count=len(valid), invalid_count=len(invalid), currency=currency, amount_mode=mode, fixed_amount=fixed, cashback_percent=percent, purchase_total=str(sum(Decimal(row['purchase_amount']) for row in valid)), total=str(sum(Decimal(row['amount']) for row in valid)))
         ledger.save_wallet_import(preview_data)
         return jsonify(preview_data)
 
@@ -348,7 +363,7 @@ def configure_wallet(app, woo, ledger):
                         'phone': row['phone'], 'company': row['company'], 'confirm': True})
                     customer_id = created['customer']['id']
                 payload = dict(request_id=key, customer_id=customer_id, amount=row['amount'], currency=row['currency'],
-                               note=cashback_note(row, row['note'] or ('سند '+row['reference'])), confirm=True)
+                               note=('شارژ مستقیم کیف پول — ' + (row['note'] or ('سند '+row['reference']))) if row.get('amount_mode') == 'fixed' else cashback_note(row, row['note'] or ('سند '+row['reference'])), confirm=True)
                 ledger.save_wallet_document(key, payload=payload)
             result = remote('POST', 'credits', payload=payload)
             result.update(reference=row['reference'], purchase_amount=row['purchase_amount'], cashback_percent=row['cashback_percent'])

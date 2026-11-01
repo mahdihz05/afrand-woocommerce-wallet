@@ -50,7 +50,7 @@ def cell_value(value):
     return value
 
 
-def read_accounting_export(stream, mapping=None, header_row=None, fields=None, max_rows=500):
+def read_accounting_export(stream, mapping=None, header_row=None, fields=None, max_rows=500, positional_fields=None):
     field_definitions = fields or FIELDS
     workbook = load_workbook(stream, read_only=True, data_only=True)
     try:
@@ -63,14 +63,20 @@ def read_accounting_export(stream, mapping=None, header_row=None, fields=None, m
             leading.append(cells)
         if not leading:
             raise ValueError("فایل خالی است.")
-        if header_row is None:
+        no_header = positional_fields is not None and (header_row == 0 or (
+            header_row is None and len(leading[0]) >= 2
+            and re.fullmatch(r'0?9\d{9}', str(leading[0][1] or '').translate(str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789')).strip())
+            and not any(len(suggest_mapping(row, field_definitions)) >= 2 for row in leading)))
+        if no_header:
+            index = -1
+        elif header_row is None:
             index = max(range(len(leading)), key=lambda i: len(suggest_mapping(leading[i], field_definitions)))
         else:
             if isinstance(header_row, bool) or not isinstance(header_row, int) or not 1 <= header_row <= len(leading):
                 raise ValueError("ردیف عنوان ستون‌ها معتبر نیست؛ یکی از ۱۵ ردیف اول را انتخاب کنید.")
             index = header_row - 1
-        headers = [str(value or "").strip() for value in leading[index]]
-        detected = suggest_mapping(headers, field_definitions) if mapping is None else mapping
+        headers = list(positional_fields) if no_header else [str(value or "").strip() for value in leading[index]]
+        detected = ({key: i for i, key in enumerate(positional_fields)} if no_header else suggest_mapping(headers, field_definitions)) if mapping is None else mapping
         if not isinstance(detected, dict):
             raise ValueError("انتخاب ستون‌ها معتبر نیست.")
         fields = {field[0] for field in field_definitions}
