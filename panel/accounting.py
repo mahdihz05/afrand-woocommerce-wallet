@@ -50,10 +50,16 @@ def cell_value(value):
     return value
 
 
-def read_accounting_export(stream, mapping=None, header_row=None, fields=None, max_rows=500, positional_fields=None):
+class MultipleSheetsError(ValueError):
+    """A single-sheet import must not silently discard other worksheets."""
+
+
+def read_accounting_export(stream, mapping=None, header_row=None, fields=None, max_rows=500, positional_fields=None, single_sheet=False):
     field_definitions = fields or FIELDS
     workbook = load_workbook(stream, read_only=True, data_only=True)
     try:
+        if single_sheet and len(workbook.worksheets) != 1:
+            raise MultipleSheetsError('فایل چند برگه دارد؛ برای جلوگیری از جا افتادن مشتریان، همهٔ ردیف‌ها را در یک برگه جمع کنید و فایل تک‌برگه‌ای بارگذاری کنید.')
         iterator = workbook.active.iter_rows(values_only=True)
         leading = []
         for _ in range(15):

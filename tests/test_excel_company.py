@@ -65,5 +65,5 @@ class ExcelCompanyTests(unittest.TestCase):
             if path == '/demo.xlsx':
                 sample_data = data
         response=self.client.post('/api/import/preview',data={'file':(io.BytesIO(sample_data),'sample.xlsx')})
-        self.assertEqual(response.json['valid_count'],2)
+        self.assertEqual(response.json['valid_count'],3)
         self.assertTrue(all(row['company'] for row in response.json['valid_rows']))

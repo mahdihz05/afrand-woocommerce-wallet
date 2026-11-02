@@ -25,7 +25,8 @@ const context = vm.createContext({
     ? {imports: [{draft_id: 'draft-123', created_at: '', confirmed: false}]}
     : {preview, results: [], done: false}
 });
-vm.runInContext(source.slice(source.indexOf('  function showImportMode()'), source.indexOf("  $('#amount-mode').addEventListener")) +
+vm.runInContext(source.slice(source.indexOf('  function formatAmountText('), source.indexOf('  function formatAmountInput(')) +
+  source.slice(source.indexOf('  function showImportMode()'), source.indexOf("  $('#amount-mode').addEventListener")) +
   source.slice(source.indexOf('  async function savedImports()'), source.indexOf("  $('#refresh-imports').addEventListener")), context);
 (async () => {
   for (const options of [
@@ -38,8 +39,9 @@ vm.runInContext(source.slice(source.indexOf('  function showImportMode()'), sour
     await element('#saved-imports').children[0].click();
     const fixed = options.amount_mode === 'fixed';
     assert.equal(element('#amount-mode').value, fixed ? 'fixed' : 'excel');
-    assert.equal(element('#fixed-amount').value, fixed ? 1000000 : '');
+    assert.equal(element('#fixed-amount').value, fixed ? '1,000,000' : '');
     assert.equal(element('#fixed-amount-field').hidden, !fixed);
+    assert.equal(element('#fixed-amount').required, fixed);
     assert.equal(element('#import-cashback-percent').hidden, fixed);
     assert.equal(element('#import-cashback-percent').required, !fixed);
     assert.equal(element('#import-cashback-percent').value, fixed ? '5' : options.cashback_percent);

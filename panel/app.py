@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import mimetypes
 import re
 import sqlite3
 import uuid
@@ -28,6 +29,8 @@ def _as_bool(value) -> bool:
 
 
 def create_app(test_config: dict | None = None, woo_client=None) -> Flask:
+    # Minimal container images may not have a system MIME database.
+    mimetypes.add_type("font/woff2", ".woff2")
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
     app.config.update(
         SECRET_KEY=None,

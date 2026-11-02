@@ -1,0 +1,16 @@
+# Independent application virtual host. Existing default servers stay unchanged.
+server {
+    listen 8087;
+    listen [::]:8087;
+    server_name _;
+    include /opt/afrand-woo-demo/config/proxy.inc;
+}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name wp-woo-demo.mahdihz.ir;
+    location ^~ /.well-known/acme-challenge/ {
+        root /opt/afrand-woo-demo/acme;
+    }
+    include /opt/afrand-woo-demo/config/proxy.inc;
+}

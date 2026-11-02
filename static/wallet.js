@@ -12,7 +12,7 @@
   const unit = currency => currency === 'IRR' ? 'ریال' : 'تومان';
   const money = (amount,currency=state.currency) => `${Number(amount).toLocaleString('fa-IR')} ${unit(currency)}`;
   const name = customer => customer ? [customer.first_name,customer.last_name].filter(Boolean).join(' ') || customer.name || 'مشتری' : '';
-  function message(text,kind='info') { const box=$('#global-message'); box.textContent=text; box.className=`message ${kind}`; box.hidden=false; }
+  function message(text,kind='info') { const box=$('#view-import').hidden?$('#global-message'):$('#import-feedback'); box.textContent=text; box.className=`message ${kind}`; box.hidden=false; if(kind==='error') { box.tabIndex=-1; box.focus(); } }
   function progress(controls) {
     active++; $('#request-progress').hidden=false;
     controls.filter(Boolean).forEach(control => { busy.set(control,(busy.get(control)||0)+1); control.classList.add('is-loading'); control.setAttribute('aria-busy','true'); });
@@ -47,12 +47,13 @@
     $('#submit-credit').disabled=!state.writes||!state.customer||state.creditBusy||Boolean(pending);
     $('#commit-import').disabled=!state.writes||!state.draft||state.previewBusy||state.importBusy||Boolean(pending);
     $('#manual-controls').inert=Boolean(pending)||state.importBusy||state.customerBusy;
-    $('#import-form').inert=state.importBusy||Boolean(pending);
+    $('#import-form').inert=state.importBusy||state.previewBusy||Boolean(pending);
     $('#mapping-form').inert=state.importBusy||state.previewBusy||Boolean(pending);
     $('#edit-mapping').disabled=state.importBusy;
     $('#import-cashback-percent').disabled=state.importBusy||state.previewBusy||Boolean(pending);
     $('#amount-mode').disabled=state.importBusy||state.previewBusy||Boolean(pending);
     $('#fixed-amount').disabled=state.importBusy||state.previewBusy||Boolean(pending);
+    $('#preview-file').disabled=state.importBusy||state.previewBusy||Boolean(pending);
     $('#pending-credit').hidden=!pending;
     $('#retry-credit').disabled=!state.writes||state.creditBusy;
   }
@@ -119,6 +120,38 @@
     catch(error) { message(`${error.message} در صورت قطع پاسخ، همان موبایل را دوباره ثبت یا جست‌وجو کنید.`, 'error'); }
     finally { state.customerBusy=false; refresh(); }
   });
+  function formatAmountText(text) {
+    const value=String(text).replace(/[۰-۹٠-٩]/g,digit=>'۰۱۲۳۴۵۶۷۸۹'.includes(digit)?'۰۱۲۳۴۵۶۷۸۹'.indexOf(digit):'٠١٢٣٤٥٦٧٨٩'.indexOf(digit)).replaceAll('٬',',');
+    // Keep invalid signs/decimals visible so validation cannot change their meaning.
+    if(!/^[\d,]*$/.test(value)) return value;
+    return value.replaceAll(',','').replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  }
+  function formatAmountInput(input) {
+    const start=input.selectionStart, end=input.selectionEnd, direction=input.selectionDirection;
+    const original=input.value, formatted=formatAmountText(original);
+    if(original===formatted) return;
+    const position=offset=>{
+      const digits=original.slice(0,offset).replace(/[,٬]/g,'').length;
+      if(!digits) return 0;
+      let count=0;
+      for(let i=0;i<formatted.length;i++) if(formatted[i]!==',' && ++count===digits) return i+1;
+      return formatted.length;
+    };
+    input.value=formatted;
+    if(start!==null) input.setSelectionRange(position(start),position(end),direction);
+  }
+  ['credit-amount','fixed-amount'].forEach(id=>{
+    const input=$('#'+id);
+    input.addEventListener('input',event=>{ if(!event.isComposing) formatAmountInput(input); });
+    input.addEventListener('compositionend',()=>{ formatAmountInput(input); input.dispatchEvent(new Event('input',{bubbles:true})); });
+    input.addEventListener('beforeinput',event=>{
+      const cursor=input.selectionStart;
+      if(event.isComposing||cursor!==input.selectionEnd) return;
+      // A separator should not trap Backspace/Delete at the same position.
+      if(event.inputType==='deleteContentBackward' && input.value[cursor-1]===',') input.setSelectionRange(Math.max(0,cursor-2),cursor);
+      if(event.inputType==='deleteContentForward' && input.value[cursor]===',') input.setSelectionRange(cursor,Math.min(input.value.length,cursor+2));
+    });
+  });
   function parseAmount(text) {
     let value=text.replace(/[۰-۹٠-٩]/g,digit=>'۰۱۲۳۴۵۶۷۸۹'.includes(digit)?'۰۱۲۳۴۵۶۷۸۹'.indexOf(digit):'٠١٢٣٤٥٦٧٨٩'.indexOf(digit)).trim().replaceAll('٬',',');
     if(value.includes(',')) { if(!/^\d{1,3}(,\d{3})+$/.test(value)) throw new Error('مبلغ را با جداکنندهٔ صحیح وارد کنید؛ مثلاً ۱۰۰٬۰۰۰.'); value=value.replaceAll(',',''); }
@@ -169,8 +202,8 @@
   }
   $('#retry-credit').addEventListener('click',()=>sendCredit(true));
   $$('.tab').forEach((tab,index)=>{ tab.addEventListener('click',()=>{ $$('.tab').forEach(item=>{ const selected=item===tab; item.classList.toggle('active',selected); item.setAttribute('aria-selected',String(selected)); item.tabIndex=selected?0:-1; }); $$('.view').forEach(view=>{ const selected=view.id===`view-${tab.dataset.view}`; view.classList.toggle('active',selected); view.hidden=!selected; }); }); tab.addEventListener('keydown',event=>{ if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return; event.preventDefault(); const tabs=$$('.tab'); const next=event.key==='Home'?0:event.key==='End'?1:1-index; tabs[next].click(); tabs[next].focus(); }); });
-  $('#excel-file').addEventListener('change',()=>{ state.draft=null; state.preview=null; state.mapping=null; $('#import-preview').hidden=true; $('#column-mapping').hidden=true; $('#import-result').hidden=true; refresh(); });
-  $('#import-cashback-percent').addEventListener('input',()=>{ state.draft=null; state.preview=null; $('#import-preview').hidden=true; refresh(); });
+  $('#excel-file').addEventListener('change',()=>{ $('#selected-file-name').textContent=$('#excel-file').files[0]?.name||'هنوز فایلی انتخاب نشده'; updateImportMode(); });
+  $('#import-cashback-percent').addEventListener('input',updateImportMode);
   $('#import-form').addEventListener('submit',event=>{ event.preventDefault(); previewFile(); });
   function showImportMode() {
     const fixed=$('#amount-mode').value==='fixed';
@@ -178,28 +211,35 @@
     const percent=$('#import-cashback-percent'); percent.hidden=fixed; percent.required=!fixed;
     document.querySelector('label[for="import-cashback-percent"]').hidden=fixed;
     percent.nextElementSibling.hidden=fixed;
+    $('#fixed-amount').required=fixed;
+    $('#import-mode-help').textContent=fixed?'کل مبلغ تعیین‌شده به کیف پول هر مشتری معتبر اضافه می‌شود؛ مبلغ خرید فایل و درصد کش‌بک استفاده نمی‌شوند.':'درصدی از مبلغ خرید هر ردیف به کیف پول همان مشتری واریز می‌شود.';
+    $('#import-columns-help').textContent=fixed?'فقط نام، موبایل و شرکت کافی است؛ مبلغ شارژ را در فرم تعیین کنید.':'مبلغ خرید را در ستون چهارم و شماره سند اجباری را در ستون پنجم بنویسید.';
+    $('#purchase-column').hidden=fixed;
+    $('#reference-column').hidden=fixed;
+    $('#reference-help').hidden=fixed;
+    $('#fixed-import-help').hidden=!fixed;
+    $('#import-template-link').href='/template.xlsx?amount_mode='+(fixed?'fixed':'excel');
+    $('#import-sample-link').href='/demo.xlsx?amount_mode='+(fixed?'fixed':'excel');
   }
   function restoreImportOptions(preview) {
     $('#amount-mode').value=preview.amount_mode==='fixed'?'fixed':'excel';
-    $('#fixed-amount').value=preview.amount_mode==='fixed'?preview.fixed_amount:'';
+    $('#fixed-amount').value=preview.amount_mode==='fixed'?formatAmountText(preview.fixed_amount):'';
     $('#import-cashback-percent').value=preview.amount_mode==='fixed'?'5':preview.cashback_percent;
     showImportMode();
   }
   function updateImportMode() {
     showImportMode();
-    state.draft=null; state.preview=null; $('#import-preview').hidden=true; refresh();
+    state.draft=null; state.preview=null; state.mapping=null; $('#import-preview').hidden=true; $('#column-mapping').hidden=true; $('#import-result').hidden=true; $('#import-feedback').hidden=true; refresh();
   }
-  $('#amount-mode').addEventListener('change',async()=>{
-    updateImportMode();
-    if($('#amount-mode').value==='fixed') await confirmAction('شارژ مستقیم کیف پول','مبلغ ثابت به‌طور کامل به کیف پول هر ردیف معتبر اضافه می‌شود؛ مبلغ خرید اکسل و درصد کش‌بک در این روش استفاده نمی‌شوند. ثبت فقط پس از پیش‌نمایش و تأیید نهایی انجام می‌شود.','متوجه شدم');
-  });
+  $('#amount-mode').addEventListener('change',updateImportMode);
   $('#fixed-amount').addEventListener('input',updateImportMode);
   async function previewFile(mapping,header) {
     if(state.previewBusy||state.importBusy||pending) return;
     const file=$('#excel-file').files[0]; if(!file) return message('فایل اکسل را انتخاب کنید.','error');
     let percent=0; try { if($('#amount-mode').value==='fixed') parseAmount($('#fixed-amount').value); else percent=parsePercent($('#import-cashback-percent').value); } catch(error) { return message(error.message,'error'); }
+    $('#import-feedback').hidden=true; $('#global-message').hidden=true;
     state.previewBusy=true; state.draft=null; state.preview=null; $('#import-preview').hidden=true; $('#excel-file').disabled=true; refresh();
-    const form=new FormData(); form.append('file',file); form.append('cashback_percent',percent); form.append('amount_mode',$('#amount-mode').value); form.append('fixed_amount',$('#fixed-amount').value); if(mapping) { form.append('mapping',JSON.stringify(mapping)); form.append('header_row',String(header)); }
+    const form=new FormData(); form.append('file',file); form.append('cashback_percent',percent); form.append('amount_mode',$('#amount-mode').value); form.append('fixed_amount',$('#amount-mode').value==='fixed'?parseAmount($('#fixed-amount').value):''); if(mapping) { form.append('mapping',JSON.stringify(mapping)); form.append('header_row',String(header)); }
     try { const data=await api('/api/import/preview',{method:'POST',body:form},[$('#preview-file'),$('#mapping-form button')]); state.mapping=data; $('#edit-mapping').hidden=false; savedImports(); $('#import-result').hidden=true; if(data.mapping_required) { renderMapping(data); return; } state.preview=data; state.draft=data.valid_count?data.draft_id:null; $('#column-mapping').hidden=true; $('#only-errors').checked=false; renderPreview(); $('#preview-file-name').textContent=file.name; $('#import-preview').hidden=false; }
     catch(error) { message(error.message,'error'); }
     finally { state.previewBusy=false; $('#excel-file').disabled=false; refresh(); }
@@ -235,16 +275,19 @@
   function renderPreview() {
     const data=state.preview; if(!data) return;
     const fixed=data.amount_mode==='fixed';
+    const skipped=data.skipped_rows||[];
+    $('#import-confirm-total').textContent=`جمع واریز ${data.valid_count.toLocaleString('fa-IR')} ردیف معتبر: ${money(data.total,data.currency)}`;
     const summary=$('#preview-summary'); summary.replaceChildren(); (fixed ? [[`${data.valid_count} واریز معتبر`,'ok'],[`${data.invalid_count} ردیف نامعتبر`,'bad'],[`شارژ مستقیم: ${money(data.total,data.currency)}`,'ok']] : [[`${data.valid_count.toLocaleString('fa-IR')} واریز معتبر`,'ok'],[`${data.invalid_count.toLocaleString('fa-IR')} ردیف نیازمند اصلاح`,'bad'],[`جمع خرید: ${money(data.purchase_total,data.currency)}`,'ok'],[`${data.cashback_percent}٪ کش‌بک؛ جمع واریز: ${money(data.total,data.currency)}`,'ok']]).forEach(([text,kind])=>{ const chip=document.createElement('span'); chip.className=`summary-chip ${kind}`; chip.textContent=text; summary.append(chip); });
-    const body=$('#preview-rows'); body.replaceChildren(); [...data.valid_rows,...data.invalid_rows].sort((a,b)=>a.row_number-b.row_number).filter(row=>!$('#only-errors').checked||row.errors.length).forEach(row=>{ const tr=document.createElement('tr'); [row.row_number,[row.reference,row.date].filter(Boolean).join(' / '),`${row.customer_name} · ${row.phone}`,row.company||'—',row.customer_id?(row.existing_company||'ثبت نشده'):'مشتری جدید',row.purchase_amount?money(row.purchase_amount,row.currency):'—',row.amount_mode==='fixed'?'شارژ مستقیم':row.cashback_percent?`${row.cashback_percent}٪`:'—',row.amount?money(row.amount,row.currency):'—',row.note||'—',row.errors.length?row.errors.join('، '):[row.customer_action,row.company_notice].filter(Boolean).join(' · ')].forEach(text=>{ const cell=document.createElement('td'); cell.textContent=String(text??''); tr.append(cell); }); body.append(tr); });
+    if(skipped.length) { const chip=document.createElement('span'); chip.className='summary-chip'; chip.textContent=`${skipped.length.toLocaleString('fa-IR')} ردیف با موبایل تکراری؛ بدون واریز اضافه`; summary.append(chip); }
+    const body=$('#preview-rows'); body.replaceChildren(); [...data.valid_rows,...data.invalid_rows,...skipped].sort((a,b)=>a.row_number-b.row_number).filter(row=>!$('#only-errors').checked||row.errors.length||row.skip_reason).forEach(row=>{ const tr=document.createElement('tr'); [row.row_number,[row.reference,row.date].filter(Boolean).join(' / '),`${row.customer_name} · ${row.phone}`,row.company||'—',row.customer_id?(row.existing_company||'ثبت نشده'):'مشتری جدید',row.purchase_amount?money(row.purchase_amount,row.currency):'—',row.amount_mode==='fixed'?'شارژ مستقیم':row.cashback_percent?`${row.cashback_percent}٪`:'—',row.amount?money(row.amount,row.currency):'—',row.note||'—',row.skip_reason||(row.errors.length?row.errors.join('، '):[row.customer_action,row.company_notice].filter(Boolean).join(' · '))].forEach(text=>{ const cell=document.createElement('td'); cell.textContent=String(text??''); tr.append(cell); }); body.append(tr); });
   }
   $('#commit-import').addEventListener('click',async()=>{
     if(!state.draft||!state.writes||state.importBusy||pending) return;
     const data=state.preview, draft=state.draft;
     if(!await confirmAction('تأیید واریزهای اکسل',(data.amount_mode==='fixed' ? `شارژ مستقیم ${data.valid_count} نفر؛ هر نفر ${money(data.fixed_amount,data.currency)}؛ جمع ${money(data.total,data.currency)}. کش‌بک محاسبه نمی‌شود.` : `${data.valid_count.toLocaleString('fa-IR')} خرید با جمع ${money(data.purchase_total,data.currency)} و کش‌بک ${data.cashback_percent}٪؛ فقط جمع ${money(data.total,data.currency)} ثبت می‌شود. مشتریان جدید ساخته می‌شوند؛ ردیف‌های خطادار واریز نمی‌شوند.`), 'ثبت واریزهای معتبر')) return;
     state.importBusy=true; refresh();
-    try { const result=await commitDraft(draft,data.valid_count); const box=$('#import-result'); box.replaceChildren(); const summary=document.createElement('p'); summary.textContent=`واریز تازه: ${result.created} · قبلاً واریز شده: ${result.replayed} · نیازمند بررسی: ${result.needs_review}`; box.append(summary); result.results.forEach(row=>{ const item=document.createElement('p'); item.textContent=`سند ${row.reference}: ${row.error||`تراکنش ${row.transaction_id} · ${row.replayed?'بدون واریز دوباره':'واریز شد'}`}`; box.append(item); }); data.invalid_rows.forEach(row=>{ const item=document.createElement('p'); item.textContent=`ردیف ${row.row_number} · واریز نشد: ${row.errors.join('، ')}`; box.append(item); }); const download=document.createElement('button'); download.className='btn btn-secondary'; download.type='button'; download.textContent='دریافت گزارش واریز'; download.addEventListener('click',()=>downloadReport(result,data.invalid_rows)); box.append(download); box.hidden=false; box.className=`card result-box ${result.needs_review?'':'success'}`; if(!result.needs_review) { state.draft=null; $('#import-preview').hidden=true; } }
-    catch(error) { message(`${error.message} فایل و شماره سندها را تغییر ندهید؛ بررسی دوباره با همان سندها از واریز تکراری جلوگیری می‌کند.`,'error'); }
+    try { const result=await commitDraft(draft,data.valid_count); const box=$('#import-result'); box.replaceChildren(); const summary=document.createElement('p'); summary.textContent=`واریز تازه: ${result.created} · قبلاً واریز شده: ${result.replayed} · نیازمند بررسی: ${result.needs_review}`; box.append(summary); result.results.forEach(row=>{ const item=document.createElement('p'); item.textContent=`سند ${row.reference}: ${row.error||`تراکنش ${row.transaction_id} · ${row.replayed?'بدون واریز دوباره':'واریز شد'}`}`; box.append(item); }); [...data.invalid_rows,...(data.skipped_rows||[]).map(row=>({...row,errors:[row.skip_reason]}))].forEach(row=>{ const item=document.createElement('p'); item.textContent=`ردیف ${row.row_number} · واریز نشد: ${row.errors.join('، ')}`; box.append(item); }); const download=document.createElement('button'); download.className='btn btn-secondary'; download.type='button'; download.textContent='دریافت گزارش واریز'; download.addEventListener('click',()=>downloadReport(result,[...data.invalid_rows,...(data.skipped_rows||[]).map(row=>({...row,errors:[row.skip_reason]}))])); box.append(download); box.hidden=false; box.className=`card result-box ${result.needs_review?'':'success'}`; if(!result.needs_review) { state.draft=null; $('#import-preview').hidden=true; } }
+    catch(error) { message(`${error.message} برای ادامهٔ همین نوبت از «ادامهٔ فایل‌های قبلی» استفاده کنید؛ نتیجهٔ ردیف‌های قبلی بررسی می‌شود تا واریز اضافه انجام نشود.`,'error'); }
     finally { savedImports(); state.importBusy=false; $('#commit-import').textContent='تأیید واریزهای معتبر'; refresh(); }
   });
   function downloadReport(result,invalid) { const safe=value=>{ const text=String(value??'').replace(/[\t\r\n]/g,' '); return /^[=+@-]/.test(text)?`'${text}`:text; }; const rows=[['شماره سند','شناسه تراکنش','شناسه مشتری','مبلغ خرید','درصد کش‌بک','کش‌بک واریزی','واحد پول','نتیجه'],...result.results.map(row=>[row.reference,row.transaction_id,row.customer_id,row.purchase_amount,row.cashback_percent,row.amount,row.currency,row.error||(row.replayed?'تکراری؛ بدون واریز دوباره':'واریز شد')]),...invalid.map(row=>[row.reference,'','',row.purchase_amount,row.cashback_percent,'',row.currency,row.errors.join('، ')])]; const url=URL.createObjectURL(new Blob(['﻿'+rows.map(row=>row.map(safe).join('\t')).join('\n')],{type:'text/tab-separated-values;charset=utf-8'})); const a=document.createElement('a'); a.href=url; a.download='customer-wallet-results.tsv'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }

@@ -90,5 +90,12 @@ def configure_login(app):
 
     @app.after_request
     def prevent_login_caching(response):
-        response.headers['Cache-Control'] = 'no-store'
+        # The bundled font is public and identical for every user. Keep private
+        # pages and API responses uncached, without re-downloading it on login.
+        if (request.endpoint == 'static'
+                and request.view_args.get('filename', '').endswith('.woff2')
+                and response.status_code in {200, 304}):
+            response.headers['Cache-Control'] = 'public, max-age=86400'
+        else:
+            response.headers['Cache-Control'] = 'no-store'
         return response

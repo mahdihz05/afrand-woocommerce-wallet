@@ -9,7 +9,7 @@ class ExcelModeTests(unittest.TestCase):
     tearDown = test_wallet.WalletTests.tearDown
 
     def preview(self, rows, headers=None, **options):
-        file = workbook(rows, headers) if headers else workbook(rows, ['نام', 'شماره', 'شرکت', 'مبلغ خرید'])
+        file = workbook(rows, headers) if headers else workbook(rows, ['نام', 'شماره', 'شرکت', 'مبلغ خرید', 'شماره سند'])
         if options.pop('no_header', False):
             from openpyxl import load_workbook
             import io
@@ -25,7 +25,7 @@ class ExcelModeTests(unittest.TestCase):
         return response.json
 
     def test_headers_no_headers_reorder_and_numeric_format_replay(self):
-        rows = [['الف', '09121234567', 'شرکت', 1000], ['ب', '09123334444', 'شرکت', 2000]]
+        rows = [['الف', '09121234567', 'شرکت', 1000, 'A'], ['ب', '09123334444', 'شرکت', 2000, 'B']]
         first = self.preview(rows)
         self.assertEqual(first['valid_count'], 2)
         self.assertEqual(first['header_row'], 1)
@@ -45,14 +45,17 @@ class ExcelModeTests(unittest.TestCase):
             self.assertEqual(data['total'], '1000000')
             result = self.commit(data)
             self.assertEqual(result['needs_review'], 0)
-        self.assertEqual(len(self.woo.transactions), 1)
+        self.assertEqual(len(self.woo.transactions), 2)
         self.assertIn('شارژ مستقیم', result['results'][0]['note'])
 
-    def test_duplicate_staff_rows_all_rejected(self):
+    def test_duplicate_staff_rows_keep_one_credit_and_report_skip(self):
         row = ['الف', '09121234567', 'شرکت', 1000]
         data = self.preview([row, row], amount_mode='fixed', fixed_amount='1000')
-        self.assertEqual(data['invalid_count'], 2)
-        self.assertEqual(data['valid_count'], 0)
+        self.assertEqual(data['invalid_count'], 0)
+        self.assertEqual(data['valid_count'], 1)
+        self.assertEqual(data['skipped_count'], 1)
+        self.assertEqual(self.commit(data)['needs_review'], 0)
+        self.assertEqual(len(self.woo.transactions), 1)
 
     def test_fixed_lost_response_retry_reconciles(self):
         data = self.preview([['الف', '09121234567', '', 1]], amount_mode='fixed', fixed_amount='1000')
@@ -62,7 +65,7 @@ class ExcelModeTests(unittest.TestCase):
         self.assertEqual(len(self.woo.transactions), 1)
 
     def test_changed_percent_on_same_purchase_requires_review(self):
-        row = [['الف', '09121234567', '', 1000]]
+        row = [['الف', '09121234567', '', 1000, 'PERCENT-1']]
         self.commit(self.preview(row))
         result = self.commit(self.preview(row, cashback_percent='10'))
         self.assertEqual(result['needs_review'], 1)

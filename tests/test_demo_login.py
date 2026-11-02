@@ -11,8 +11,19 @@ class DemoLoginTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             app = create_demo_app(directory)
             client = app.test_client()
+            public_font = client.get('/static/fonts/Vazirmatn-VF.woff2?v=33.003')
+            try:
+                self.assertEqual(public_font.status_code, 200)
+                self.assertEqual(public_font.mimetype, 'font/woff2')
+                self.assertTrue(public_font.cache_control.public)
+                self.assertEqual(public_font.cache_control.max_age, 86400)
+            finally:
+                public_font.close()
+            self.assertTrue(client.get('/login').cache_control.no_store)
             self.assertEqual(client.get('/').status_code, 302)
-            self.assertEqual(client.get('/api/status').status_code, 401)
+            unauthorized = client.get('/api/status')
+            self.assertEqual(unauthorized.status_code, 401)
+            self.assertTrue(unauthorized.cache_control.no_store)
             token = re.search(r'name="csrf_token" value="([^"]+)"',
                               client.get('/login').text).group(1)
             self.assertEqual(client.post('/login', data={'username':'admin',
@@ -20,6 +31,7 @@ class DemoLoginTests(unittest.TestCase):
             self.assertEqual(client.post('/login', data={'username':'admin',
                 'password':'admin1234', 'csrf_token':token}).status_code, 302)
             self.assertEqual(client.get('/').status_code, 200)
+            self.assertTrue(client.get('/').cache_control.no_store)
             self.assertTrue(client.get('/api/status').json['writes_enabled'])
             font = client.get('/static/fonts/Vazirmatn-VF.woff2')
             try:
