@@ -82,6 +82,15 @@ class LoginTests(unittest.TestCase):
         self.assertIn('no-store',response.headers['Cache-Control'])
         self.assertIn('autocomplete="current-password"',response.get_data(as_text=True))
 
+    def test_browser_security_headers_on_login_and_authenticated_api(self):
+        self.login()
+        for path in ('/login', '/api/status'):
+            response = self.client.get(path)
+            self.assertEqual(response.headers['X-Frame-Options'], 'DENY')
+            self.assertEqual(response.headers['X-Content-Type-Options'], 'nosniff')
+            self.assertEqual(response.headers['Referrer-Policy'], 'same-origin')
+        self.assertIn("script-src 'self'", self.client.get('/login').headers['Content-Security-Policy'])
+
     def test_auth_configuration_requires_password_hash(self):
         with self.assertRaisesRegex(ValueError, 'PANEL_PASSWORD_HASH'):
             create_app({'PANEL_AUTH_ENABLED':True, 'SECRET_KEY':secrets.token_hex(32),

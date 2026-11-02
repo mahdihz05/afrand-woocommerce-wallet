@@ -2,8 +2,45 @@
 
 import re
 from datetime import date, datetime
+from zipfile import ZipFile
 
+from defusedxml.ElementTree import iterparse
 from openpyxl import load_workbook
+from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
+
+
+def validate_workbook_resources(stream):
+    """Bound compressed OOXML work before openpyxl allocates shared data.
+
+    Reject the whole file rather than silently truncating distant customers.
+    Worksheet dimensions are untrusted: actual row/cell coordinates are checked.
+    """
+    try:
+        with ZipFile(stream) as archive:
+            entries = archive.infolist()
+            if len(entries) > 128 or sum(item.file_size for item in entries) > 12 * 1024 * 1024:
+                raise ValueError('ساختار فایل اکسل بیش از حد بزرگ است؛ فایل را به بخش‌های کوچک‌تر تقسیم کنید.')
+            if len({item.filename for item in entries}) != len(entries):
+                raise ValueError('ساختار فایل اکسل معتبر نیست؛ فایل را دوباره از اکسل ذخیره کنید.')
+            for item in entries:
+                if not (item.filename.startswith('xl/worksheets/') and item.filename.endswith('.xml')):
+                    continue
+                previous = 0
+                with archive.open(item) as source:
+                    for event, element in iterparse(source, events=('end',)):
+                        tag = element.tag.rsplit('}', 1)[-1]
+                        if tag == 'c' and element.get('r'):
+                            column, row = coordinate_from_string(element.get('r'))
+                            if row > 10000 or column_index_from_string(column) > 100:
+                                raise ValueError('فایل باید حداکثر ۱۰۰ ستون و ۱۰۰۰۰ ردیف فیزیکی داشته باشد؛ ردیف‌های دور و خالی را حذف کنید.')
+                        if tag == 'row':
+                            number = int(element.get('r', previous + 1))
+                            if not previous < number <= 10000:
+                                raise ValueError('شماره یا تعداد ردیف‌های فایل اکسل معتبر نیست؛ فایل را دوباره ذخیره کنید.')
+                            previous = number
+                        element.clear()
+    finally:
+        stream.seek(0)
 
 FIELDS = [
     ("order_ref", "شماره فاکتور", True, ["شماره سند", "شماره سفارش", "invoice no", "invoice number"]),
@@ -56,10 +93,13 @@ class MultipleSheetsError(ValueError):
 
 def read_accounting_export(stream, mapping=None, header_row=None, fields=None, max_rows=500, positional_fields=None, single_sheet=False):
     field_definitions = fields or FIELDS
+    validate_workbook_resources(stream)
     workbook = load_workbook(stream, read_only=True, data_only=True)
     try:
         if single_sheet and len(workbook.worksheets) != 1:
             raise MultipleSheetsError('فایل چند برگه دارد؛ برای جلوگیری از جا افتادن مشتریان، همهٔ ردیف‌ها را در یک برگه جمع کنید و فایل تک‌برگه‌ای بارگذاری کنید.')
+        # A forged/small dimension must never hide real records later in XML.
+        workbook.active.reset_dimensions()
         iterator = workbook.active.iter_rows(values_only=True)
         leading = []
         for _ in range(15):

@@ -90,6 +90,15 @@ def configure_login(app):
 
     @app.after_request
     def prevent_login_caching(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Referrer-Policy'] = 'same-origin'
+        response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+        if app.config.get('WALLET_MODE') or request.endpoint == 'login':
+            response.headers['Content-Security-Policy'] = (
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; object-src 'none'; base-uri 'self'; "
+                "frame-ancestors 'none'; form-action 'self'")
         # The bundled font is public and identical for every user. Keep private
         # pages and API responses uncached, without re-downloading it on login.
         if (request.endpoint == 'static'
