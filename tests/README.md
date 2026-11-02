@@ -28,7 +28,7 @@ it is not a WordPress load benchmark.
 the second two-row batch is committed on the server and its HTTP response is
 deliberately lost. After a browser reload, the saved import resumes at row index
 4. All seven valid customers receive exactly one correct credit; two invalid
-rows remain visible and all nine records appear in the downloaded report.
+rows remain visible and all nine records appear in the on-page result. No TSV download is offered.
 No live customer accounts are used.
 
 `test_import_restore.js` executes the saved-import callback from `wallet.js`
@@ -68,7 +68,7 @@ protection after reordering. Explicit duplicate invoice numbers remain invalid
 for cashback; separate purchases should use separate invoice numbers.
 
 Run `python tests/browser_duplicate_modes.py` for isolated Chromium acceptance
-of both modes, skipped-row visibility, complete downloaded reports, and three uploads per mode (six fixed credits, five cashback credits). Screenshots and receipts are stored under
+of both modes, skipped-row visibility, complete on-page results without TSV downloads, and three uploads per mode (six fixed credits, five cashback credits). Screenshots and receipts are stored under
 `tmp/browser-duplicate-modes`. This test uses synthetic wallets only.
 # Monetary input regression
 

@@ -279,13 +279,13 @@ def configure_wallet(app, woo, ledger):
         # Fixed credits belong to this run; cashback credits belong to the document.
         # Persist identities so recovery never creates an extra credit.
         draft = uuid.uuid4().hex
-        references = Counter(str(row.get('reference') or '').strip() for row in rows)
+        references = Counter(str(row.get('reference') if row.get('reference') is not None else '').strip() for row in rows)
         normalized = []
         fixed_phones = {}
         skipped = []
         for index, source in enumerate(rows):
             row = {**source, 'errors': []}
-            row['reference'] = str(source.get('reference') or '').strip()
+            row['reference'] = str(source.get('reference') if source.get('reference') is not None else '').strip()
             if mode == 'fixed':
                 row['reference'] = f"ردیف {source['row_number']}"
                 row['operation_id'] = f'{draft}:{index}'

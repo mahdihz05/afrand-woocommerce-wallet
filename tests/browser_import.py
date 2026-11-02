@@ -143,10 +143,8 @@ def main():
         result = commit()
         assert result['replayed' if args.replay_existing else 'created'] == 1 and result['needs_review'] == 0, result
         assert balance() == before + cashback_delta
-        with page.expect_download() as download:
-            page.locator('#import-result button').click()
-        report = download.value.path().read_bytes().decode('utf-8-sig')
-        assert 'شماره سند' in report and ref in report
+        expect(page.locator('#import-result button')).to_have_count(0)
+        expect(page.locator('#import-result')).to_contain_text(ref)
 
         # Re-upload, not just re-click: protected identity must survive new draft.
         preview()
@@ -197,7 +195,7 @@ def main():
         receipt = {'url': base, 'hosted': bool(args.base_url), 'live': args.live, 'replay_existing': args.replay_existing, 'customer_id': cid, 'balance_before': before,
                    'balance_after': balance(), 'credits': results, 'page_errors': errors,
                    'checks': ['corrupt file', 'invalid percent', 'preview no writes', 'invalid row filter',
-                              'cancel no writes', 'cashback credit', 'report download', 'reupload replay',
+                              'cancel no writes', 'cashback credit', 'inline results without TSV', 'reupload replay',
                               'fixed headerless', 'zero fixed amount', 'mobile no overflow',
                               'saved draft restore', 'changed amount invalidates preview', 'network failure no writes']}
         (output / 'receipt.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2), 'utf-8')

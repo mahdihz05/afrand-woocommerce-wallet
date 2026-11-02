@@ -1,5 +1,6 @@
 """Customer deduplication for direct credit; purchase multiplicity for cashback."""
 import unittest
+from datetime import date, datetime
 import test_wallet
 from test_wallet import workbook
 
@@ -76,6 +77,31 @@ class DuplicateModeTests(unittest.TestCase):
         for reference in ('PERIOD-1', 'PERIOD-2', 'PERIOD-3'):
             self.finish(self.preview([['مریم', '09121234567', '', 1000, reference]], 'excel'))
         self.assertEqual(len(self.woo.transactions), 3)
+
+    def test_cashback_accepts_dates_and_custom_identifiers_and_replays(self):
+        references = ['۱۴۰۵/۰۸/۱۱-۱', 'تسویه/آبان-A', '2026-11-02',
+                      datetime(2026, 11, 3), 0]
+        rows = [['مریم', '09121234567', '', 1000, ref] for ref in references]
+        preview = self.preview(rows, 'excel')
+        self.assertEqual((preview['valid_count'], preview['invalid_count']), (5, 0))
+        self.assertEqual([r['reference'] for r in preview['valid_rows']],
+                         ['۱۴۰۵/۰۸/۱۱-۱', 'تسویه/آبان-A', '2026-11-02',
+                          '2026-11-03T00:00:00', '0'])
+        self.finish(preview)
+        replay = self.finish(self.preview(list(reversed(rows)), 'excel'))
+        self.assertTrue(all(r['replayed'] for r in replay['results']))
+        self.assertEqual(len(self.woo.transactions), 5)
+        self.assertEqual(sum(int(t['amount']) for t in self.woo.transactions), 250)
+
+    def test_same_excel_date_is_duplicate_even_for_different_customers(self):
+        preview = self.preview([
+            ['مریم', '09121234567', '', 1000, date(2026, 11, 2)],
+            ['دیگر', '09120000002', '', 2000, datetime(2026, 11, 2)],
+        ], 'excel')
+        self.assertEqual((preview['valid_count'], preview['invalid_count']), (0, 2))
+        for row in preview['invalid_rows']:
+            self.assertIn('تکراری', ' '.join(row['errors']))
+        self.assertFalse(self.woo.transactions)
 
     def test_cashback_new_customer_created_once_for_repeated_purchases(self):
         rows = [['New customer', '09120000009', '', amount, f'NEW-{i}']

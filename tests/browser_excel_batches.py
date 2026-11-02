@@ -114,17 +114,16 @@ def main():
                         txs = [t for t in wallet.transactions if t['customer_id'] == customer['id']]
                         expected = 37 if mode == 'fixed' else row[3] * 75 // 1000
                         assert len(txs) == 1 and int(txs[0]['amount']) == expected, (row, txs)
-                    with page.expect_download() as download:
-                        page.locator('#import-result button').click()
-                    report = download.value.path().read_bytes().decode('utf-8-sig')
-                    assert len(report.splitlines()) == 10, report  # header + 7 paid + 2 rejected
-                    for row in preview['valid_rows'] + preview['invalid_rows']:
-                        assert row['reference'] in report
+                    expect(page.locator('#import-result button')).to_have_count(0)
+                    for row in preview['valid_rows']:
+                        expect(page.locator('#import-result')).to_contain_text(row['reference'])
+                    for row in preview['invalid_rows']:
+                        expect(page.locator('#import-result')).to_contain_text(f"ردیف {row['row_number']}")
                     page.screenshot(path=str(output / (mode + '.png')), full_page=True)
                     receipts.append({'mode': mode, 'valid': 7, 'invalid': 2, 'credited': 7,
                                      'interrupted_offsets': calls, 'resumed_offset': 4,
                                      'transactions_unique': len({r['transaction_id'] for r in saved['results']}),
-                                     'report_data_rows': 9, 'multiple_sheets_rejected': True,
+                                     'visible_result_rows': 9, 'multiple_sheets_rejected': True,
                                      'total': preview['total']})
                 assert not errors, errors
                 browser.close()

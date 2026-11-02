@@ -60,11 +60,11 @@ def main():
                         expect(page.locator('#import-result')).to_contain_text('نیازمند بررسی: 0')
                         expect(page.locator('#import-result')).to_contain_text('واریز تازه: 0' if replay else f"واریز تازه: {preview['valid_count']}")
                         assert len(wallet.transactions)-before == (2 * (run + 1) if mode == 'fixed' else 5)
-                        with page.expect_download() as download:
-                            page.locator('#import-result button').click()
-                        report=download.value.path().read_bytes().decode('utf-8-sig')
-                        assert len(report.splitlines()) == len(rows)+1, report
-                        if mode == 'fixed': assert 'موبایل تکراری' in report
+                        expect(page.locator('#import-result button')).to_have_count(0)
+                        if mode == 'fixed':
+                            expect(page.locator('#import-result')).to_contain_text('موبایل تکراری')
+                        for row in preview['invalid_rows'] + preview.get('skipped_rows', []):
+                            expect(page.locator('#import-result')).to_contain_text(f"ردیف {row['row_number']}")
                         page.screenshot(path=str(output/f'{mode}-{replay}.png'), full_page=True)
                     receipts.append({'mode':mode,'input_rows':len(rows),'credits':len(wallet.transactions)-before,'reupload_new_credits':2 if mode == 'fixed' else 0})
                 assert not errors, errors
