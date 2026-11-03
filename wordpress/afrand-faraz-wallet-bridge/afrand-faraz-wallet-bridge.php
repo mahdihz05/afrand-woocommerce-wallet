@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Afrand Faraz Wallet Bridge
  * Description: Phone-based customer registration and idempotent FarazSMS credits for the Afrand panel.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Requires PHP: 7.4
  */
 defined('ABSPATH') || exit;
 
 final class Afrand_Faraz_Wallet_Bridge {
-    const VERSION = '1.0.0';
+    const VERSION = '1.0.1';
     const NS = 'wc/v3';
     static function table() { global $wpdb; return $wpdb->prefix . 'afrand_faraz_wallet_operations'; }
     static function activate() {
@@ -262,3 +262,7 @@ final class Afrand_Faraz_Wallet_Bridge {
 }
 register_activation_hook(__FILE__,array('Afrand_Faraz_Wallet_Bridge','activate'));
 add_action('rest_api_init',array('Afrand_Faraz_Wallet_Bridge','routes'));
+add_action('admin_menu', function () {
+    require_once __DIR__ . '/admin-wallets.php';
+    Afrand_Faraz_Wallet_Admin::register();
+}, 99);
