@@ -7,7 +7,7 @@
   let pending = null, searchVersion = 0, detailVersion = 0, searchController = null;
   let active = 0;
   const busy = new Map();
-  try { pending = JSON.parse(sessionStorage.getItem('afrand.pendingWallet') || 'null'); } catch { /* storage unavailable */ }
+  try { pending = JSON.parse(sessionStorage.getItem('afrand.faraz.pendingWallet') || 'null'); } catch { /* storage unavailable */ }
   if (pending && (!pending.payload || !pending.customer || !/^[a-f0-9]{32}$/.test(pending.payload.request_id))) pending = null;
   const unit = currency => currency === 'IRR' ? 'ریال' : 'تومان';
   const money = (amount,currency=state.currency) => `${Number(amount).toLocaleString('fa-IR')} ${unit(currency)}`;
@@ -107,7 +107,22 @@
   });
   function renderTransactions(rows) {
     const box=$('#wallet-transactions'); box.replaceChildren(); if(!rows.length) { box.textContent='هنوز تراکنشی ثبت نشده است.'; return; }
-    rows.forEach(row=>{ const item=document.createElement('div'); item.className='wallet-transaction'; const amount=document.createElement('b'); amount.className=row.type; amount.textContent=`${row.type==='credit'?'＋ واریز':'− برداشت'} ${money(row.amount,row.currency)}`; const info=document.createElement('small'); info.textContent=`تراکنش ${row.transaction_id} · ${row.date}`; const note=document.createElement('small'); note.textContent=(row.details||'').replace(/\s*\[AFRAND:[a-f0-9]{64}\]/g,''); item.append(amount,info,note); box.append(item); });
+    rows.forEach(row=>{
+      const item=document.createElement('div'); item.className='wallet-transaction';
+      const amount=document.createElement('b'); amount.className=row.type;
+      amount.textContent=`${row.type==='credit'?'＋ واریز':'− برداشت'} ${money(row.amount,row.currency)}`;
+      const info=document.createElement('small'); info.textContent=`تراکنش ${row.transaction_id} · ${row.date}`;
+      const note=document.createElement('small'); note.textContent=(row.details||'').replace(/\s*\[AFRAND:[a-f0-9]{64}\]/g,'');
+      item.append(amount,info,note);
+      if(row.used_amount!==undefined) {
+        const usage=document.createElement('small');
+        usage.textContent='مصرف‌شده: '+money(row.used_amount,row.currency)
+          +(row.status ? ' · وضعیت: '+({active:'فعال',expired:'منقضی',used:'مصرف‌شده'}[row.status]||row.status) : '')
+          +(row.expires_at ? ' · انقضا: '+row.expires_at : '');
+        item.append(usage);
+      }
+      box.append(item);
+    });
   }
   $('#show-new-customer').addEventListener('click',()=>{ $('#new-customer-panel').hidden=false; $('#new-customer-form [name=first_name]').focus(); });
   $('#cancel-new-customer').addEventListener('click',()=>$('#new-customer-panel').hidden=true);
@@ -186,7 +201,7 @@
     if (!savePending()) { pending=null; refresh(); return message('ذخیرهٔ شناسهٔ واریز در مرورگر ممکن نیست. دسترسی ذخیره‌سازی مرورگر را فعال کنید و دوباره تلاش کنید؛ مبلغ واریز نشد.','error'); }
     await sendCredit(false);
   });
-  function savePending() { try { if(pending) sessionStorage.setItem('afrand.pendingWallet',JSON.stringify(pending)); else sessionStorage.removeItem('afrand.pendingWallet'); } catch { refresh(); return false; } refresh(); return true; }
+  function savePending() { try { if(pending) sessionStorage.setItem('afrand.faraz.pendingWallet',JSON.stringify(pending)); else sessionStorage.removeItem('afrand.faraz.pendingWallet'); } catch { refresh(); return false; } refresh(); return true; }
   async function sendCredit(recover=true) {
     if(!pending||state.creditBusy||!state.writes) return;
     state.creditBusy=true; refresh(); $('#global-message').hidden=true;

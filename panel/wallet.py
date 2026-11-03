@@ -15,7 +15,8 @@ from .accounting import MultipleSheetsError, read_accounting_export
 from .domain import normalize_phone
 from .woo import WooError
 
-ROOT = 'afrand-wallet'
+ROOT = 'afrand-faraz-wallet'
+PROVIDER = 'FarazSMS'
 DIGITS = str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789')
 FIELDS = [
     ('reference', 'شماره سند', True, ['شماره فاکتور', 'شماره رسید', 'کد پیگیری', 'reference', 'order_ref', 'invoice no']),
@@ -105,7 +106,7 @@ def configure_wallet(app, woo, ledger):
 
     def details():
         data = remote('GET', 'status')
-        if not isinstance(data, dict) or not data.get('connected') or data.get('wallet') != 'TeraWallet':
+        if not isinstance(data, dict) or not data.get('connected') or data.get('wallet') != PROVIDER:
             raise WooError('پاسخ اتصال کیف پول معتبر نیست.', category='api')
         return data
 
@@ -184,7 +185,7 @@ def configure_wallet(app, woo, ledger):
         note = str(data.get('note') or '').strip()
         values = cashback_values(data.get('purchase_amount'), data.get('cashback_percent', '5'))
         note = cashback_note({**values, 'currency': currency}, note)
-        key = hashlib.sha256((woo.base_url + ':manual-wallet:' + request_id).encode()).hexdigest()
+        key = hashlib.sha256((woo.base_url + ':faraz-manual-wallet:' + request_id).encode()).hexdigest()
         return {'request_id': key, 'customer_id': customer_id, 'amount': values['amount'], 'currency': currency, 'note': note, 'confirm': True}, values
 
     @app.post('/api/wallet/credits')
@@ -207,7 +208,7 @@ def configure_wallet(app, woo, ledger):
             return blocked
         if not re.fullmatch('[a-f0-9]{32,64}', request_id):
             return fail('شناسهٔ درخواست معتبر نیست.')
-        key = hashlib.sha256((woo.base_url + ':manual-wallet:' + request_id).encode()).hexdigest()
+        key = hashlib.sha256((woo.base_url + ':faraz-manual-wallet:' + request_id).encode()).hexdigest()
         return jsonify(remote('GET', f'operations/{key}'))
 
     def template_bytes(mode='excel', sample=False):
@@ -334,7 +335,7 @@ def configure_wallet(app, woo, ledger):
         invalid = [row for row in normalized if row['errors']]
         # A wallet-specific envelope cannot be mistaken for historical order drafts.
         ledger.save_draft(draft, [{'kind':'wallet-cashback-v2', 'rows':valid, 'currency':currency}])
-        preview_data = dict(**parsed, draft_id=draft, valid_rows=valid, invalid_rows=invalid, skipped_rows=skipped, skipped_count=len(skipped), valid_count=len(valid), invalid_count=len(invalid), currency=currency, amount_mode=mode, fixed_amount=fixed, cashback_percent=percent, purchase_total=str(sum(Decimal(row['purchase_amount']) for row in valid)), total=str(sum(Decimal(row['amount']) for row in valid)))
+        preview_data = dict(**parsed, wallet_provider=PROVIDER, draft_id=draft, valid_rows=valid, invalid_rows=invalid, skipped_rows=skipped, skipped_count=len(skipped), valid_count=len(valid), invalid_count=len(invalid), currency=currency, amount_mode=mode, fixed_amount=fixed, cashback_percent=percent, purchase_total=str(sum(Decimal(row['purchase_amount']) for row in valid)), total=str(sum(Decimal(row['amount']) for row in valid)))
         ledger.save_wallet_import(preview_data)
         return jsonify(preview_data)
 
@@ -353,7 +354,7 @@ def configure_wallet(app, woo, ledger):
     def execute_row(row):
         # Legacy saved runs keep their original keys, including uncertain writes.
         identity = (':wallet-import:' + row['operation_id']) if row.get('operation_id') else (':wallet-reference:' + row['reference'])
-        key = hashlib.sha256((woo.base_url + identity).encode()).hexdigest()
+        key = hashlib.sha256((woo.base_url + ':faraz:' + identity).encode()).hexdigest()
         meaning = {field: row[field] for field in ('phone', 'purchase_amount', 'cashback_percent', 'amount', 'currency', 'note')}
         fingerprint = hashlib.sha256(json.dumps(meaning, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         with ledger.wallet_document_lock(key):
@@ -409,6 +410,8 @@ def configure_wallet(app, woo, ledger):
         saved = ledger.wallet_import(draft_id)
         if not saved:
             return fail('پیش‌نمایش منقضی یا نامعتبر است؛ فایل را دوباره بررسی کنید.')
+        if saved['preview'].get('wallet_provider') != PROVIDER:
+            return fail('این فایل مربوط به اتصال قبلی کیف پول است؛ برای فراز پیش‌نمایش جدید بسازید.', 409)
         rows = saved['preview']['valid_rows']
         offset = data.get('offset', 0)
         if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= len(rows):

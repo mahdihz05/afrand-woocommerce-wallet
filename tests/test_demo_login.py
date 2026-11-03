@@ -48,12 +48,12 @@ class DemoLoginTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'fake-wallet.json'
             wallet = PersistentDemoWallet(path)
-            customer = wallet.request('POST', 'afrand-wallet/customers/create', payload={
+            customer = wallet.request('POST', 'afrand-faraz-wallet/customers/create', payload={
                 'first_name':'Demo', 'phone':'09123334455', 'company':'Example'})['customer']
             payload = {'request_id':'a'*32, 'customer_id':customer['id'],
                        'amount':'5000', 'currency':'IRT', 'note':'demo'}
-            wallet.request('POST', 'afrand-wallet/credits', payload=payload)
+            wallet.request('POST', 'afrand-faraz-wallet/credits', payload=payload)
             restored = PersistentDemoWallet(path)
-            self.assertTrue(restored.request('POST', 'afrand-wallet/credits', payload=payload)['replayed'])
+            self.assertTrue(restored.request('POST', 'afrand-faraz-wallet/credits', payload=payload)['replayed'])
             self.assertEqual(len(restored.transactions), 1)
             self.assertEqual(restored.customers[-1]['company'], 'Example')

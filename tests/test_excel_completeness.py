@@ -90,7 +90,7 @@ class ExcelCompletenessTests(unittest.TestCase):
                 failed_phone = rows[3][1]
 
                 def request(method, path, params=None, payload=None):
-                    if path == 'afrand-wallet/credits':
+                    if path == 'afrand-faraz-wallet/credits':
                         customer = next(c for c in self.woo.customers if c['id'] == payload['customer_id'])
                         if customer['phone'] == failed_phone:
                             raise WooError('temporary credit outage', 503)

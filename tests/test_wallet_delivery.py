@@ -35,7 +35,7 @@ class DeliveryTests(unittest.TestCase):
         result=self.preview([[f'R{i}','Customer',f'0912{i:07d}',100,'IRT'] for i in range(1000)])
         self.assertEqual(result.status_code,200)
         self.assertEqual(result.json['valid_count'],1000)
-        self.assertEqual(self.woo.calls.count(('POST','afrand-wallet/customers/lookup')),10)
+        self.assertEqual(self.woo.calls.count(('POST','afrand-faraz-wallet/customers/lookup')),10)
 
     def test_restart_restores_partial_results_and_reconciles_decimal_lost_response(self):
         preview=self.preview([[f'RESTART{i}','Customer','09121234567',100,'IRT'] for i in range(4)]).json
@@ -47,10 +47,10 @@ class DeliveryTests(unittest.TestCase):
         restored=self.client.get('/api/import/'+draft).json
         self.assertEqual(len(restored['results']),2); self.assertEqual(restored['next_offset'],0)
         self.assertTrue(restored['confirmed']); self.assertFalse(restored['done'])
-        writes_before=self.woo.calls.count(('POST','afrand-wallet/credits'))
+        writes_before=self.woo.calls.count(('POST','afrand-faraz-wallet/credits'))
         recovered=self.client.post('/api/import/commit',json={'draft_id':draft,'confirm':True,'offset':0}).json
         self.assertEqual(recovered['replayed'],2)
-        self.assertEqual(self.woo.calls.count(('POST','afrand-wallet/credits')),writes_before)
+        self.assertEqual(self.woo.calls.count(('POST','afrand-faraz-wallet/credits')),writes_before)
         self.client.post('/api/import/commit',json={'draft_id':draft,'confirm':True,'offset':2})
         self.assertTrue(self.client.get('/api/import/'+draft).json['done'])
         self.assertEqual(len(self.woo.transactions),4)
@@ -77,10 +77,10 @@ class DeliveryTests(unittest.TestCase):
                     [[f'SANITIZED-{index}','Name','09121234567',100,'IRT',original]],headers),'test.xlsx')}).json
                 request=self.woo.request
                 def sanitized_remote(method, path, params=None, payload=None):
-                    if method=='POST' and path=='afrand-wallet/credits':
+                    if method=='POST' and path=='afrand-faraz-wallet/credits':
                         payload={**payload,'note':payload['note'].replace(original,canonical)}
                     result=request(method,path,params=params,payload=payload)
-                    if path.startswith('afrand-wallet/operations/') and params and 'expected_note' in params:
+                    if path.startswith('afrand-faraz-wallet/operations/') and params and 'expected_note' in params:
                         expected=params['expected_note']
                         if expected.replace(original,canonical)!=result['note']:
                             raise test_wallet.WooError('title conflict',409)
@@ -91,12 +91,12 @@ class DeliveryTests(unittest.TestCase):
                     first=self.client.post('/api/import/commit',json={'draft_id':p['draft_id'],'confirm':True}).json
                     self.assertEqual(first['needs_review'],1)
                     self.app=create_app(self.config,woo_client=self.woo); self.client=self.app.test_client()
-                    writes=self.woo.calls.count(('POST','afrand-wallet/credits'))
+                    writes=self.woo.calls.count(('POST','afrand-faraz-wallet/credits'))
                     for _ in range(2):
                         recovered=self.client.post('/api/import/commit',json={'draft_id':p['draft_id'],'confirm':True}).json
                         self.assertEqual(recovered['needs_review'],0)
                         self.assertEqual(recovered['results'][0]['state'],'succeeded')
-                    self.assertEqual(self.woo.calls.count(('POST','afrand-wallet/credits')),writes)
+                    self.assertEqual(self.woo.calls.count(('POST','afrand-faraz-wallet/credits')),writes)
                 self.assertEqual(len(self.woo.transactions),index+1)
 
     def test_recovery_rejects_conflicting_remote_title(self):
@@ -109,4 +109,4 @@ class DeliveryTests(unittest.TestCase):
             result=self.client.post('/api/import/commit',json={'draft_id':p['draft_id'],'confirm':True}).json
             self.assertEqual(result['needs_review'],1)
         self.assertEqual(len(self.woo.transactions),1)
-        self.assertEqual(self.woo.calls.count(('POST','afrand-wallet/credits')),1)
+        self.assertEqual(self.woo.calls.count(('POST','afrand-faraz-wallet/credits')),1)

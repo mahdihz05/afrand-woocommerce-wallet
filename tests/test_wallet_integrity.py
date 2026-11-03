@@ -38,7 +38,7 @@ class WalletProxy:
 
     def request(self, method, path, params=None, payload=None):
         result = self.remote.request(method, path, params, payload)
-        if self.crash and method == 'POST' and path == 'afrand-wallet/credits':
+        if self.crash and method == 'POST' and path == 'afrand-faraz-wallet/credits':
             # Credit exists remotely, but no panel result or HTTP response exists.
             os._exit(73)
         return result
@@ -95,7 +95,7 @@ class IntegrityTests(unittest.TestCase):
             self.assertEqual([w.exitcode for w in workers], [0, 0])
             self.assertEqual(len(remote.audit()['transactions']), 1)
             self.assertEqual(remote.audit()['transactions'][0]['amount'], '50')
-            self.assertEqual(remote.audit()['calls'].count(('POST', 'afrand-wallet/credits')), 1)
+            self.assertEqual(remote.audit()['calls'].count(('POST', 'afrand-faraz-wallet/credits')), 1)
 
     def test_parallel_manual_retry_and_customer_conflict(self):
         other = self.client.post('/api/customers', json={
@@ -185,6 +185,6 @@ class IntegrityTests(unittest.TestCase):
                 self.assertEqual((recovered['created'], recovered['replayed'], recovered['needs_review']), (0, 1, 0))
             self.assertTrue(reopened.get('/api/import/'+p['draft_id']).json['done'])
             audit = remote.audit()
-            self.assertEqual(audit['calls'].count(('POST', 'afrand-wallet/credits')), 1)
+            self.assertEqual(audit['calls'].count(('POST', 'afrand-faraz-wallet/credits')), 1)
             self.assertEqual([t['amount'] for t in audit['transactions']], ['123'])
             self.assertEqual(reopened.get('/api/customers/7').json['wallet']['balance'], '123')

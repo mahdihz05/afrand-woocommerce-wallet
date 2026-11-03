@@ -28,11 +28,11 @@ class FakeWallet:
 
     def request(self, method, path, params=None, payload=None):
         self.calls.append((method,path))
-        if not path.startswith('afrand-wallet/'):
+        if not path.startswith('afrand-faraz-wallet/'):
             raise AssertionError('Wallet mode contacted a commerce endpoint: '+path)
-        route = path.removeprefix('afrand-wallet/')
+        route = path.removeprefix('afrand-faraz-wallet/')
         if route == 'status':
-            return {'connected':True,'wallet':'TeraWallet','currency':self.currency,'decimals':0}
+            return {'connected':True,'wallet':'FarazSMS','currency':self.currency,'decimals':0}
         if route == 'customers' and method == 'GET':
             q = params['q']; phone = normalize_phone(q)
             found = [c for c in self.customers if (c['phone'] == phone if phone.startswith('09') else q in c['first_name']+' '+c['last_name'])]

@@ -1,6 +1,8 @@
 ﻿# دموی کیف پول و کش‌بک افرند
 
-پنل فارسی برای پیدا کردن یا ساخت مشتری و واریز کش‌بک خرید به **کیف پول اصلی TeraWallet در وردپرس**، به‌صورت تکی یا از فایل اکسل.
+پنل فارسی برای پیدا کردن یا ساخت مشتری و واریز کش‌بک خرید به **کیف پول مشتری فراز اس‌ام‌اس در وردپرس**، به‌صورت تکی یا از فایل اکسل.
+
+راهنمای شاخهٔ جدید و شواهد آزمون اتصال فراز: [انتقال به فراز](FARAZ_MIGRATION.md). گزارش‌های قبلی زیر مربوط به اتصال تراولت هستند.
 
 وضعیت اتصال سایت جدید و آزمون واقعی ۲۰۲۶-۱۱-۰۱ در [گزارش تحویل آزمایشی](ACADEMY_ACCEPTANCE.md) ثبت شده است. [نقطهٔ ادامهٔ قبلی](RESUME.md) مربوط به ۲۰۲۶-۱۰-۲۸ است.
 
@@ -21,7 +23,7 @@
 
 ## ساختار فنی
 
-بک‌اند Python/Flask، رابط JavaScript و CSS ساده و SQLite برای پیش‌نمایش‌ها و سوابق عملیات استفاده می‌شود. موجودی و تراکنش مالی اصلی در WordPress/TeraWallet نگهداری می‌شوند؛ SQLite کیف پول جداگانه نیست.
+بک‌اند Python/Flask، رابط JavaScript و CSS ساده و SQLite برای پیش‌نمایش‌ها و سوابق عملیات استفاده می‌شود. موجودی و تراکنش مالی اصلی در WordPress/Faraz SMS نگهداری می‌شوند؛ SQLite کیف پول جداگانه نیست.
 
 ```text
 panel/       منطق برنامه، ورود، اکسل و اتصال به WooCommerce
@@ -36,12 +38,12 @@ scripts/     ابزارهای بررسی؛ برخی مربوط به نسخهٔ �
 
 ## راه‌اندازی محلی
 
-پیش‌نیازها: **Python 3.12 یا جدیدتر** و `uv`. برای اتصال واقعی، سایت آزمایشی WordPress با WooCommerce، TeraWallet و [Afrand Wallet Bridge](wordpress/README.md) نیاز است.
+پیش‌نیازها: **Python 3.12 یا جدیدتر** و `uv`. برای اتصال واقعی، سایت آزمایشی WordPress با WooCommerce، Faraz SMS و [Afrand Faraz Wallet Bridge](wordpress/README.md) نیاز است.
 
 ```bash
 git clone https://github.com/mahdihz05/afrand-woocommerce-wallet.git
 cd afrand-woocommerce-wallet
-git switch feature/excel-fixed-credit
+git switch feature/farazsms-wallet
 uv sync --frozen
 ```
 
@@ -113,7 +115,7 @@ uv run --with playwright python scripts/verify_wallet.py
 
 ## وضعیت و مسیر تکمیل
 
-راهنمای نصب Passenger، الزامات دیتابیس و محدودیت آزمون‌ها: [DELIVERY_INSTALL.md](DELIVERY_INSTALL.md). آزمون هم‌زمانی محلی با کیف پول ساختگی: `python tests/load_wallet.py`؛ این آزمون جای پذیرش WordPress/TeraWallet واقعی را نمی‌گیرد.
+راهنمای نصب Passenger، الزامات دیتابیس و محدودیت آزمون‌ها: [DELIVERY_INSTALL.md](DELIVERY_INSTALL.md). آزمون هم‌زمانی محلی با کیف پول ساختگی: `python tests/load_wallet.py`؛ این آزمون جای پذیرش WordPress/Faraz SMS واقعی را نمی‌گیرد.
 
 این دمو مبنای توسعهٔ نسخهٔ اصلی است. برای تحویل، تعهدات قرارداد، قواعد نهایی کش‌بک و مرجوعی، خروجی واقعی حسابداری، نقش‌ها و دسترسی‌ها، محیط نهایی و سناریوهای پذیرش باید مشخص و آزموده شوند. پشتیبانی از فایل عمومی اکسل به معنی تأیید سازگاری با نرم‌افزار حسابداری خاص نیست.
 

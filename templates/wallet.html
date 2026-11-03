@@ -5,11 +5,11 @@
   <link rel="preload" href="{{ url_for('static', filename='fonts/Vazirmatn-VF.woff2', v='33.003') }}" as="font" type="font/woff2" crossorigin>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='cart.svg') }}"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow">
   <title>پنل مدیریت مشتریان | مدیریت کیف پول مشتریان</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='reference-help-20261102') }}"><link rel="stylesheet" href="{{ url_for('static', filename='wallet.css') }}">
-  <script src="{{ url_for('static', filename='wallet.js', v='reference-help-20261102') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v='faraz-wallet-20261103') }}"><link rel="stylesheet" href="{{ url_for('static', filename='wallet.css') }}">
+  <script src="{{ url_for('static', filename='wallet.js', v='faraz-wallet-20261103') }}" defer></script>
 </head>
 <body>
-<header class="topbar"><a class="brand" href="/"><img class="brand-mark" src="{{ url_for('static', filename='cart.svg') }}" alt="" width="45" height="45"><span>پنل مدیریت مشتریان<small>مدیریت کیف پول مشتریان</small></span></a><div class="top-actions"><span class="env-chip">نسخهٔ نمایشی</span><span id="connection-state" class="connection" role="status">در حال بررسی اتصال…</span><button id="refresh-connection" class="link-button" type="button" aria-label="بررسی دوبارهٔ اتصال">↻</button>{% if config.PANEL_AUTH_ENABLED %}<form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ session.auth_csrf }}"><button class="link-button" type="submit">خروج</button></form>{% endif %}</div></header>
+<header class="topbar"><a class="brand" href="/"><img class="brand-mark" src="{{ url_for('static', filename='cart.svg') }}" alt="" width="45" height="45"><span>پنل مدیریت مشتریان<small>مدیریت کیف پول مشتریان</small></span></a><div class="top-actions"><span class="env-chip">کیف پول فراز · آزمایشی</span><span id="connection-state" class="connection" role="status">در حال بررسی اتصال…</span><button id="refresh-connection" class="link-button" type="button" aria-label="بررسی دوبارهٔ اتصال">↻</button>{% if config.PANEL_AUTH_ENABLED %}<form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ session.auth_csrf }}"><button class="link-button" type="submit">خروج</button></form>{% endif %}</div></header>
 <main class="container">
   <div class="page-heading"><div><span class="eyebrow">نام، موبایل، مبلغ</span><h1>واریز به کیف پول مشتریان</h1><p>برای یک مشتری واریز کنید یا چند مشتری را از اکسل وارد کنید؛ مبالغ را پیش از تأیید بررسی کنید.</p></div><div class="wallet-stamp" aria-hidden="true">کیف پول<br><b>مشتریان</b></div></div>
   <div id="global-message" class="message" role="status" hidden></div>
