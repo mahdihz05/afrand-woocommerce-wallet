@@ -2,13 +2,13 @@
 /**
  * Plugin Name: Afrand Faraz Wallet Bridge
  * Description: Phone-based customer registration and idempotent FarazSMS credits for the Afrand panel.
- * Version: 1.0.1
+ * Version: 1.1.3
  * Requires PHP: 7.4
  */
 defined('ABSPATH') || exit;
 
 final class Afrand_Faraz_Wallet_Bridge {
-    const VERSION = '1.0.1';
+    const VERSION = '1.1.3';
     const NS = 'wc/v3';
     static function table() { global $wpdb; return $wpdb->prefix . 'afrand_faraz_wallet_operations'; }
     static function activate() {
@@ -20,10 +20,14 @@ final class Afrand_Faraz_Wallet_Bridge {
             fingerprint varchar(64) NOT NULL,
             state varchar(20) NOT NULL,
             result_json longtext NULL,
+            sms_state varchar(20) NOT NULL DEFAULT 'legacy',
+            sms_json longtext NULL,
             created_at datetime NOT NULL,
             updated_at datetime NOT NULL,
-            PRIMARY KEY  (operation_key)
+            PRIMARY KEY  (operation_key),
+            KEY sms_pending (sms_state,updated_at)
         ) " . $wpdb->get_charset_collate() . ';');
+        update_option('afrand_faraz_bridge_schema', self::VERSION, false);
     }
     static function permission() {
         if (!current_user_can('manage_woocommerce')) return new WP_Error('afrand_forbidden', 'دسترسی مدیریت کیف پول لازم است.', array('status'=>403));
@@ -197,7 +201,13 @@ final class Afrand_Faraz_Wallet_Bridge {
         $t=$transactions[0];
         if ((int)$t['user_id']!==$payload['customer_id'] || $t['source']!=='afrand_panel' || (float)$t['amount']!==(float)$payload['amount'] || get_woocommerce_currency()!==$payload['currency']) return self::error('تراکنش نیازمند بررسی است.',409,'afrand_unknown');
         $result=array_merge($payload,array('transaction_id'=>(int)$t['transaction_id'],'replayed'=>true,'state'=>'succeeded'));
-        $wpdb->update(self::table(),array('state'=>'succeeded','result_json'=>wp_json_encode($result),'updated_at'=>current_time('mysql',true)),array('operation_key'=>$key));
+        $changes=array('state'=>'succeeded','result_json'=>wp_json_encode($result),'updated_at'=>current_time('mysql',true));
+        // Only credits created after notification support opt in. Never message old imports.
+        if (isset($row['sms_state']) && $row['sms_state']==='awaiting_credit') {
+            $changes['sms_state']='pending';
+            $changes['sms_json']=wp_json_encode(array('phone'=>self::user_phone($payload['customer_id']), 'amount'=>$payload['amount'], 'balance'=>(string)farazsms_wallet_balance($payload['customer_id']), 'currency'=>$payload['currency']));
+        }
+        if ($wpdb->update(self::table(),$changes,array('operation_key'=>$key))===false) return self::error('ثبت نتیجه واریز کامل نشد؛ نتیجه را دوباره بررسی کنید.',503,'afrand_unknown');
         return $result;
     }
     static function operation($r) {
@@ -247,7 +257,7 @@ final class Afrand_Faraz_Wallet_Bridge {
             // A persistent object cache may contain a balance from before acquiring the lock.
             clean_user_cache($id);
             $now=current_time('mysql',true);
-            if (!$wpdb->insert(self::table(),array('operation_key'=>$key,'fingerprint'=>$fingerprint,'state'=>'processing','result_json'=>wp_json_encode($payload),'created_at'=>$now,'updated_at'=>$now))) return self::error('ثبت شناسهٔ واریز انجام نشد.',503);
+            if (!$wpdb->insert(self::table(),array('operation_key'=>$key,'fingerprint'=>$fingerprint,'state'=>'processing','result_json'=>wp_json_encode($payload),'sms_state'=>'awaiting_credit','created_at'=>$now,'updated_at'=>$now))) return self::error('ثبت شناسهٔ واریز انجام نشد.',503);
             $details='واریز از پنل افرند'.($note ? ' — '.$note : '').' [AFRAND:'.$key.']';
             // Store currency, just like Faraz native top-up; no second Toman conversion.
             $transaction=farazsms_wallet_add_credit($id,(float)$amount,array('source'=>'afrand_panel','description'=>$details,'expiry_days'=>0,'dedupe'=>false));
@@ -260,7 +270,14 @@ final class Afrand_Faraz_Wallet_Bridge {
         } finally { self::unlock('credit-'.$key); }
     }
 }
+require_once __DIR__ . '/credit-notifications.php';
+require_once __DIR__ . '/checkout-compatibility.php';
 register_activation_hook(__FILE__,array('Afrand_Faraz_Wallet_Bridge','activate'));
+register_deactivation_hook(__FILE__,array('Afrand_Faraz_Credit_Notifications','deactivate'));
+add_action('init',array('Afrand_Faraz_Credit_Notifications','init'));
+add_action('afrand_faraz_credit_notifications',array('Afrand_Faraz_Credit_Notifications','run'));
+add_filter('cron_schedules',array('Afrand_Faraz_Credit_Notifications','schedules'));
+add_filter('rest_request_after_callbacks',array('Afrand_Faraz_Credit_Notifications','after_credit'),10,3);
 add_action('rest_api_init',array('Afrand_Faraz_Wallet_Bridge','routes'));
 add_action('admin_menu', function () {
     require_once __DIR__ . '/admin-wallets.php';

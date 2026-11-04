@@ -2,6 +2,8 @@
 // Synthetic native-ledger contract; deliberately independent of WordPress.
 define('ABSPATH', __DIR__.'/'); define('ARRAY_A', 'ARRAY_A');
 function register_activation_hook($f,$c) {} function add_action($e,$c) {}
+function register_deactivation_hook($f,$c) {} function add_filter($e,$c) {}
+function get_user_meta($id,$key,$single) { return $key==='billing_phone' ? '09120000007' : ''; }
 class WP_Error { public $code; function __construct($c,$m,$d) { $this->code=$c; } }
 function is_wp_error($v) { return $v instanceof WP_Error; }
 function sanitize_text_field($v) { return strip_tags($v); }
@@ -12,7 +14,11 @@ function get_woocommerce_currency() { return 'IRT'; } function wc_get_price_deci
 function wc_format_decimal($v,$d) { return number_format((float)$v,$d,'.',''); }
 function farazsms_wallet_table() { return 'wp_farazsms_user_wallet'; }
 function farazsms_wallet_balance($id) { return 0; }
-class Request extends ArrayObject { function get_param($n) { return $this[$n] ?? null; } }
+class Request extends ArrayObject {
+    function get_param($n) { return $this[$n] ?? null; }
+    function get_route() { return $this['_route'] ?? '/wc/v3/afrand-faraz-wallet/credits'; }
+    function get_method() { return $this['_method'] ?? 'POST'; }
+}
 class NativeDB {
     public $prefix='wp_', $last_error='', $saved=array(), $native=array(), $locks=0;
     function prepare($q,...$args) { return array($q,$args); }

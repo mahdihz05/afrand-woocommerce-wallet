@@ -15,7 +15,7 @@ def main():
     output = root / 'outputs' / 'faraz-release'
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f'afrand-faraz-wallet-bridge-{version}.zip'
-    members = ('afrand-faraz-wallet-bridge.php', 'admin-wallets.php')
+    members = ('afrand-faraz-wallet-bridge.php', 'admin-wallets.php', 'credit-notifications.php', 'checkout-compatibility.php')
     with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as package:
         for name in members:
             info = zipfile.ZipInfo(f'{folder.name}/{name}', date_time=(2026, 11, 3, 0, 0, 0))

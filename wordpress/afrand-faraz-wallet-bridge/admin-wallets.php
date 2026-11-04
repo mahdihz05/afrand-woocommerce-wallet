@@ -95,16 +95,31 @@ final class Afrand_Faraz_Wallet_Admin {
         $page = min($page, max(1, (int) ceil($total / 20)));
         $rows = $wpdb->get_results($wpdb->prepare("SELECT id,amount,used_amount,status,description,source,created_at,expires_at FROM $table WHERE user_id=%d ORDER BY id DESC LIMIT %d OFFSET %d", $id, 20, ($page - 1) * 20));
         if ($wpdb->last_error) { echo '<p>خواندن سوابق با خطا روبه‌رو شد.</p>'; return; }
-        echo '<p>مبلغ مصرف‌شده، مصرف از هر اعتبار را نشان می‌دهد. اعتبار منقضی یا غیرفعال در موجودی قابل استفاده محاسبه نمی‌شود.</p><div style="overflow:auto"><table class="widefat striped"><thead><tr><th>شناسه</th><th>تاریخ واریز</th><th>مبلغ واریز</th><th>مصرف‌شده</th><th>وضعیت</th><th>انقضا</th><th>توضیحات</th></tr></thead><tbody>';
+        $sms=array();
+        if (class_exists('Afrand_Faraz_Credit_Notifications')) {
+            $keys=array();
+            foreach ($rows as $row) if (preg_match('/\[AFRAND:([a-f0-9]{64})\]/',(string)$row->description,$match)) $keys[]=$match[1];
+            if ($keys) {
+                $placeholders=implode(',',array_fill(0,count($keys),'%s'));
+                $notifications=$wpdb->get_results($wpdb->prepare('SELECT operation_key,sms_state FROM '.Afrand_Faraz_Wallet_Bridge::table()." WHERE operation_key IN ($placeholders)",$keys));
+                foreach ((array)$notifications as $notification) $sms[$notification->operation_key]=$notification->sms_state;
+            }
+        }
+        echo '<p>مبلغ مصرف‌شده، مصرف از هر اعتبار را نشان می‌دهد. اعتبار منقضی یا غیرفعال در موجودی قابل استفاده محاسبه نمی‌شود. وضعیت پیامک فقط برای شارژهای جدید برنامه است؛ پذیرش سامانه به معنی تأیید تحویل به گوشی نیست.</p><div style="overflow:auto"><table class="widefat striped"><thead><tr><th>شناسه</th><th>تاریخ واریز</th><th>مبلغ واریز</th><th>مصرف‌شده</th><th>وضعیت</th><th>انقضا</th><th>توضیحات</th><th>پیامک شارژ</th></tr></thead><tbody>';
         foreach ($rows as $row) {
             $expired = $row->expires_at && $row->expires_at <= current_time('mysql');
             $status = $row->status === 'active' ? ($expired ? 'منقضی' : 'فعال') : $row->status;
             $description = preg_replace('/\s*\[AFRAND:[a-f0-9]{64}\]/i', '', (string) $row->description);
+            $sms_label='—';
+            if (preg_match('/\[AFRAND:([a-f0-9]{64})\]/',(string)$row->description,$match) && isset($sms[$match[1]])) {
+                $labels=Afrand_Faraz_Credit_Notifications::labels();
+                $sms_label=isset($labels[$sms[$match[1]]]) ? $labels[$sms[$match[1]]] : 'نیازمند بررسی';
+            }
             echo '<tr>';
-            foreach (array($row->id, $row->created_at, self::money($row->amount), self::money($row->used_amount), $status, $row->expires_at ?: 'بدون انقضا', $description) as $value) echo '<td>' . esc_html($value) . '</td>';
+            foreach (array($row->id, $row->created_at, self::money($row->amount), self::money($row->used_amount), $status, $row->expires_at ?: 'بدون انقضا', $description, $sms_label) as $value) echo '<td>' . esc_html($value) . '</td>';
             echo '</tr>';
         }
-        if (!$rows) echo '<tr><td colspan="7">واریزی ثبت نشده است.</td></tr>';
+        if (!$rows) echo '<tr><td colspan="8">واریزی ثبت نشده است.</td></tr>';
         echo '</tbody></table></div>';
         self::pagination($page, $total, array('user_id' => $id));
     }
